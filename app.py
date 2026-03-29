@@ -4,11 +4,29 @@ from pathlib import Path
 from datetime import date
 import streamlit.components.v1 as components
 
-# ---- 環境変数 ----
-HF_TOKEN          = os.environ.get("HF_TOKEN", "")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-DRIVE_BASE        = os.environ.get("DRIVE_BASE", "/tmp/Claude")
-# ---- 月次パスワード自動生成 (v2.5) ----
+# ================================================================
+# 環境変数
+# ================================================================
+ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
+GROQ_API_KEY       = os.environ.get("GROQ_API_KEY", "")
+ASSEMBLYAI_API_KEY = os.environ.get("ASSEMBLYAI_API_KEY", "")
+HF_TOKEN           = os.environ.get("HF_TOKEN", "")
+DRIVE_BASE         = os.environ.get("DRIVE_BASE", "/tmp/Claude")
+CLAUDE_MODEL       = "claude-haiku-4-5-20251001"
+
+import pathlib
+pathlib.Path("/tmp/Claude").mkdir(parents=True, exist_ok=True)
+
+WAV_FILE = "/tmp/meeting.wav"
+
+# ================================================================
+# ページ設定
+# ================================================================
+st.set_page_config(page_title="万世ぶーちゃん v2.6", page_icon="🐷", layout="centered")
+
+# ================================================================
+# 月次パスワード生成（フォールバック用）
+# ================================================================
 def _gen_monthly_pw():
     import hashlib as _h, datetime as _d
     _S = "ManseiBuuchan2024"
@@ -17,47 +35,73 @@ def _gen_monthly_pw():
     _hx = _h.sha256(_raw.encode("utf-8")).hexdigest()
     _C = "ABCDEFGHJKMNPQRTVWXY2346789"
     return "".join(_C[int(_hx[i:i+2], 16) % len(_C)] for i in range(0, 16, 2))
-APP_PASSWORD = _gen_monthly_pw()
-CLAUDE_MODEL      = "claude-haiku-4-5-20251001"
 
-# ---- 必要ディレクトリ作成 ----
-import pathlib
-pathlib.Path("/tmp/Claude").mkdir(parents=True, exist_ok=True)
+# ================================================================
+# 認証（Google OAuth → 月次パスワードにフォールバック）
+# ================================================================
+def check_auth():
+    try:
+        # Streamlit v1.37+ Google OAuth
+        if not st.user.is_logged_in:
+            st.markdown("""
+<div style='text-align:center;padding:60px 0 40px;'>
+  <span style='font-size:72px;'>🐷</span>
+  <h1 style='font-size:24px;margin:16px 0 8px;'>万世ぶーちゃん</h1>
+  <p style='color:#888;font-size:14px;'>AI議事録・文字起こし校正システム</p>
+</div>""", unsafe_allow_html=True)
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                if st.button("🔐 Google アカウントでログイン",
+                             type="primary", use_container_width=True):
+                    st.login("google")
+            st.stop()
 
-WAV_FILE          = "/tmp/meeting.wav"
+        # アクセス許可チェック
+        allowed = list(st.secrets.get("allowed_emails", []))
+        if allowed and st.user.email not in allowed:
+            st.error(f"⛔ {st.user.email} はアクセス権限がありません。管理者にお問い合わせください。")
+            if st.button("別のアカウントでログイン"):
+                st.logout()
+            st.stop()
 
-# ---- ページ設定 ----
-st.set_page_config(page_title="万世ぶーちゃん v2.5", page_icon="🐷", layout="centered")
+        # サイドバーにユーザー情報
+        with st.sidebar:
+            st.markdown(f"👤 **{st.user.name}**")
+            st.caption(st.user.email)
+            if st.button("ログアウト", use_container_width=True):
+                st.logout()
 
-# ---- パスワード保護 ----
-if APP_PASSWORD:
-    if not st.session_state.get("authenticated"):
-        st.title("🔑 ログイン")
-        pw = st.text_input("パスワードを入力", type="password")
-        if st.button("ログイン"):
-            if pw == APP_PASSWORD:
-                st.session_state["authenticated"] = True
-                st.rerun()
-            else:
-                st.error("パスワードが違います")
-        st.stop()
+    except AttributeError:
+        # Google OAuth 未設定時は月次パスワードにフォールバック
+        APP_PW = _gen_monthly_pw()
+        if not st.session_state.get("authenticated"):
+            st.title("🔑 ログイン")
+            pw = st.text_input("パスワードを入力", type="password")
+            if st.button("ログイン"):
+                if pw == APP_PW:
+                    st.session_state["authenticated"] = True
+                    st.rerun()
+                else:
+                    st.error("パスワードが違います")
+            st.stop()
 
-# ---- 起動時RAM確認・警告（修正2） ----
+check_auth()
+
+# ================================================================
+# 起動時RAM確認・警告
+# ================================================================
 def check_ram_on_startup():
     mem = psutil.virtual_memory()
     available_gb = mem.available / (1024 ** 3)
     if available_gb < 4:
-        st.error(f"🔴 RAMが不足しています（利用可能: {available_gb:.1f} GB）。アプリが起動しない場合はColabランタイムを再起動してください。")
+        st.error(f"🔴 RAMが不足しています（利用可能: {available_gb:.1f} GB）。")
     elif available_gb < 8:
-        st.warning(f"🟡 RAMに余裕がありません（利用可能: {available_gb:.1f} GB）。重い処理では問題が起きる可能性があります。")
-    else:
-        st.success(f"🟢 RAM十分（利用可能: {available_gb:.1f} GB）")
+        st.warning(f"🟡 RAMに余裕がありません（利用可能: {available_gb:.1f} GB）。")
 
-check_ram_on_startup()
-
-# ---- 起動時ピピピサウンド（修正3） ----
+# ================================================================
+# 起動音
+# ================================================================
 def play_startup_sound():
-    """起動時にピピピピッピ音を鳴らす"""
     components.html("""
     <script>
     (function() {
@@ -88,7 +132,9 @@ if not st.session_state.get("startup_sound_played"):
     play_startup_sound()
     st.session_state["startup_sound_played"] = True
 
-# ---- セッション初期化 ----
+# ================================================================
+# セッション初期化
+# ================================================================
 DEFAULTS = {
     "step": 1, "audio_path": None, "file_base": "",
     "raw_text": "", "segments_data": None,
@@ -99,33 +145,21 @@ DEFAULTS = {
     "minutes_html": "", "legal_html": "",
     "drive_save_dir": "", "crash_recovered": False,
     "model_size": "medium",
+    "speaker_map": {},
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# ---- ユーティリティ ----
+# ================================================================
+# ユーティリティ
+# ================================================================
 def ram_info():
     mem = psutil.virtual_memory()
     pct = mem.percent
     color = "red" if pct > 85 else "orange" if pct > 70 else "green"
-    base = (f"<span style='color:{color};font-weight:bold;'>"
+    return (f"<span style='color:{color};font-weight:bold;'>"
             f"RAM {mem.used/1e9:.1f}/{mem.total/1e9:.1f}GB ({pct:.0f}%)</span>")
-    # GPU情報はセッション内でキャッシュ（torch初期化を1回だけにする）
-    if "_gpu_info_html" not in st.session_state:
-        gpu_html = ""
-        try:
-            import torch
-            if torch.cuda.is_available():
-                gm = torch.cuda.memory_reserved(0) / 1e9
-                gt = torch.cuda.get_device_properties(0).total_memory / 1e9
-                gpu_html = (f" &nbsp;<span style='color:#2980b9;font-weight:bold;'>"
-                            f"🚀GPU {gm:.1f}/{gt:.1f}GB</span>")
-        except Exception:
-            pass
-        st.session_state["_gpu_info_html"] = gpu_html
-    base += st.session_state["_gpu_info_html"]
-    return base
 
 def show_animal_progress(placeholder, pct, msg):
     w = 18
@@ -143,53 +177,87 @@ def show_animal_progress(placeholder, pct, msg):
 </div>
 """, unsafe_allow_html=True)
 
-def merge_segments_with_speakers(segments, speaker_turns, name_map):
-    results = []
-    for seg in segments:
-        s, e, txt = seg["start"], seg["end"], seg["text"]
-        best_sp, best_ov = "SPEAKER_00", 0
-        for turn in speaker_turns:
-            ov = max(0, min(e, turn["end"]) - max(s, turn["start"]))
-            if ov > best_ov:
-                best_ov, best_sp = ov, turn["speaker"]
-        results.append({"speaker": name_map.get(best_sp, best_sp),
-                         "start": s, "end": e, "text": txt})
-    return results
+def estimate_transcription_time(file_size_bytes, model_name="medium"):
+    mb = file_size_bytes / (1024 * 1024)
+    speed_map = {"tiny": 5, "base": 8, "small": 12, "medium": 20, "large": 35, "large-v2": 40, "large-v3": 45}
+    sec_per_mb = speed_map.get(model_name, 20)
+    estimated_sec = mb * sec_per_mb
+    if estimated_sec < 60:
+        return f"約{int(estimated_sec)}秒"
+    elif estimated_sec < 3600:
+        return f"約{int(estimated_sec/60)}分{int(estimated_sec%60)}秒"
+    else:
+        return f"約{int(estimated_sec/3600)}時間{int((estimated_sec%3600)/60)}分"
 
-def build_raw_text(merged):
-    lines, cur_sp = [], None
-    for seg in merged:
-        sp, txt = seg["speaker"], seg["text"].strip()
-        if sp != cur_sp:
-            lines.append(f"\n【{sp}】")
-            cur_sp = sp
-        lines.append(txt)
-    return "\n".join(lines).strip()
+# ================================================================
+# 文字起こし関数（クラウドAPI）
+# ================================================================
+def transcribe_groq(audio_path: str) -> str:
+    """Groq Whisper API で文字起こし（無料・高速・話者識別なし）"""
+    from groq import Groq
+    client = Groq(api_key=GROQ_API_KEY)
+    with open(audio_path, "rb") as f:
+        result = client.audio.transcriptions.create(
+            model="whisper-large-v3",
+            file=f,
+            language="ja",
+            response_format="verbose_json",
+            timestamp_granularities=["segment"],
+        )
+    text = ""
+    try:
+        for seg in result.segments:
+            text += "[" + str(round(seg["start"], 1)) + "s] " + seg["text"].strip() + "\n"
+    except Exception:
+        text = getattr(result, "text", "") or ""
+    return text
 
+def transcribe_assemblyai(audio_path: str, speakers_expected: int = 2) -> str:
+    """AssemblyAI で文字起こし（話者識別あり・100時間無料）"""
+    import assemblyai as aai
+    aai.settings.api_key = ASSEMBLYAI_API_KEY
+    config = aai.TranscriptionConfig(
+        language_code="ja",
+        speaker_labels=True,
+        speakers_expected=speakers_expected,
+    )
+    transcriber = aai.Transcriber(config=config)
+    transcript = transcriber.transcribe(audio_path)
+    if transcript.status == aai.TranscriptStatus.error:
+        raise Exception("AssemblyAI エラー: " + str(transcript.error))
+    text = ""
+    if transcript.utterances:
+        for u in transcript.utterances:
+            text += "[" + str(round(u.start / 1000, 1)) + "s] " + u.speaker + ": " + u.text + "\n"
+    else:
+        text = getattr(transcript, "text", "") or ""
+    return text
+
+# ================================================================
+# Claude API 呼び出し
+# ================================================================
 def call_claude_minutes(raw_text, q_date, q_title, q_place,
                          participants, emphasis, decisions, pending):
     import anthropic as _ant
     client = _ant.Anthropic(api_key=ANTHROPIC_API_KEY)
-    prompt = f"""以下の会議の文字起こしテキストをもとに、HTMLフォーマットの議事録を作成してください。
-
-【会議情報】
-- 日時: {q_date}
-- 件名: {q_title}
-- 場所: {q_place}
-- 参加者: {participants}
-- 強調したい項目: {emphasis}
-- 決定事項（入力済み）: {decisions}
-- 未決定課題: {pending}
-
-【文字起こし（最大15000文字）】
-{raw_text[:15000]}
-
-【出力形式】
-- DOCTYPE〜</html>まで完全なHTML、UTF-8、A4印刷対応
-- セクション: 基本情報テーブル / 背景・経緯 / アジェンダ / 議論の要約 / 決定事項 / アクションアイテム（誰が・何を・いつまで） / 次回予定
-- 重要箇所は赤太字で強調
-- 「検討する」は禁止 → 「○○が△△までに結論を出す」に置き換え
-"""
+    prompt = (
+        "以下の会議の文字起こしテキストをもとに、HTMLフォーマットの議事録を作成してください。\n\n"
+        "【会議情報】\n"
+        "- 日時: " + q_date + "\n"
+        "- 件名: " + q_title + "\n"
+        "- 場所: " + q_place + "\n"
+        "- 参加者: " + participants + "\n"
+        "- 強調したい項目: " + emphasis + "\n"
+        "- 決定事項（入力済み）: " + decisions + "\n"
+        "- 未決定課題: " + pending + "\n\n"
+        "【文字起こし（最大15000文字）】\n"
+        + raw_text[:15000] + "\n\n"
+        "【出力形式】\n"
+        "- DOCTYPE〜</html>まで完全なHTML、UTF-8、A4印刷対応\n"
+        "- セクション: 基本情報テーブル / 背景・経緯 / アジェンダ / 議論の要約 / 決定事項 / アクションアイテム（誰が・何を・いつまで） / 次回予定\n"
+        "- 重要箇所は赤太字で強調\n"
+        "- 「検討する」は禁止 → 「○○が△△までに結論を出す」に置き換え\n"
+    )
     resp = client.messages.create(
         model=CLAUDE_MODEL, max_tokens=4096,
         messages=[{"role": "user", "content": prompt}]
@@ -199,45 +267,27 @@ def call_claude_minutes(raw_text, q_date, q_title, q_place,
 def call_claude_legal(raw_text, q_title):
     import anthropic as _ant
     client = _ant.Anthropic(api_key=ANTHROPIC_API_KEY)
-    prompt = f"""以下の会議文字起こしを、読みやすく整形した「文字起こしデータHTML」を作成してください。
-
-件名: {q_title}
-
-【文字起こし】
-{raw_text[:15000]}
-
-【出力形式】
-- DOCTYPE〜</html>まで完全なHTML、A4印刷対応
-- 重要な発言・決定事項を5〜10点抽出し、タイムスタンプ・発言者・内容を表形式で整理
-- 責任認定・約束・謝罪・矛盾する発言・優越的地位の乱用を優先抽出
-- 重要度が高い箇所は赤背景または赤枠で強調
-"""
+    prompt = (
+        "以下の会議文字起こしを、読みやすく整形した「文字起こしデータHTML」を作成してください。\n\n"
+        "件名: " + q_title + "\n\n"
+        "【文字起こし】\n"
+        + raw_text[:15000] + "\n\n"
+        "【出力形式】\n"
+        "- DOCTYPE〜</html>まで完全なHTML、A4印刷対応\n"
+        "- 重要な発言・決定事項を5〜10点抽出し、タイムスタンプ・発言者・内容を表形式で整理\n"
+        "- 責任認定・約束・謝罪・矛盾する発言・優越的地位の乱用を優先抽出\n"
+        "- 重要度が高い箇所は赤背景または赤枠で強調\n"
+    )
     resp = client.messages.create(
         model=CLAUDE_MODEL, max_tokens=4096,
         messages=[{"role": "user", "content": prompt}]
     )
     return resp.content[0].text
 
-def save_to_drive(file_base, minutes_html, legal_html, raw_text,
-                   segments_data, speaker_turns):
-    save_dir = os.path.join(DRIVE_BASE, "議事録アウトプット", file_base)
-    os.makedirs(save_dir, exist_ok=True)
-    saved = []
-    def w(name, content):
-        p = os.path.join(save_dir, name)
-        with open(p, "w", encoding="utf-8") as f:
-            f.write(content)
-        saved.append(p)
-    if minutes_html: w(f"{file_base}_議事録.html", minutes_html)
-    if legal_html:   w(f"{file_base}_文字起こし.html", legal_html)
-    if raw_text:     w(f"{file_base}_文字起こし.txt", raw_text)
-    bak = {"segments": segments_data or [], "speaker_turns": speaker_turns or []}
-    w(f"{file_base}_backup.json", json.dumps(bak, ensure_ascii=False, indent=2))
-    return save_dir, saved
-
-# ---- 完了通知音（修正6） ----
+# ================================================================
+# 完了通知音
+# ================================================================
 def play_completion_sound():
-    """炊飯器完了音（確認ボタンを押すまで鳴り続ける）"""
     components.html("""
     <div id="sound-container" style="text-align:center; padding:20px; background:#fff3cd; border-radius:10px; border:2px solid #ffc107;">
         <p style="font-size:24px;">🍚 処理が完了しました！</p>
@@ -248,17 +298,15 @@ def play_completion_sound():
     <script>
     let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     let isPlaying = true;
-
     function playDonChime() {
         if (!isPlaying) return;
-        // 炊飯器のような完了チャイム音
         const melody = [
-            {freq: 523, dur: 0.3, start: 0.0},   // ド
-            {freq: 659, dur: 0.3, start: 0.35},   // ミ
-            {freq: 784, dur: 0.3, start: 0.70},   // ソ
-            {freq: 1047, dur: 0.6, start: 1.05},  // 高ド
-            {freq: 784, dur: 0.3, start: 1.75},   // ソ
-            {freq: 1047, dur: 0.8, start: 2.10},  // 高ド（長め）
+            {freq: 523, dur: 0.3, start: 0.0},
+            {freq: 659, dur: 0.3, start: 0.35},
+            {freq: 784, dur: 0.3, start: 0.70},
+            {freq: 1047, dur: 0.6, start: 1.05},
+            {freq: 784, dur: 0.3, start: 1.75},
+            {freq: 1047, dur: 0.8, start: 2.10},
         ];
         melody.forEach(n => {
             const osc = audioCtx.createOscillator();
@@ -271,39 +319,17 @@ def play_completion_sound():
             osc.start(audioCtx.currentTime + n.start);
             osc.stop(audioCtx.currentTime + n.start + n.dur + 0.1);
         });
-        // 3.5秒後に再度繰り返し
-        if (isPlaying) {
-            setTimeout(playDonChime, 3500);
-        }
+        if (isPlaying) { setTimeout(playDonChime, 3500); }
     }
-
     function stopSound() {
         isPlaying = false;
         audioCtx.close();
         document.getElementById('sound-container').innerHTML =
             '<p style="font-size:18px; color:green;">✅ 確認済み</p>';
     }
-
     playDonChime();
     </script>
     """, height=150)
-
-# ---- ファイルサイズから予想処理時間を表示（修正5） ----
-def estimate_transcription_time(file_size_bytes, model_name="medium"):
-    """ファイルサイズからWhisper処理時間を推定"""
-    # おおよその目安: 1MBあたりmediumモデルで約20秒（Colab環境）
-    mb = file_size_bytes / (1024 * 1024)
-    speed_map = {"tiny": 5, "base": 8, "small": 12, "medium": 20, "large": 35, "large-v2": 40, "large-v3": 45}
-    sec_per_mb = speed_map.get(model_name, 20)
-    estimated_sec = mb * sec_per_mb
-
-    if estimated_sec < 60:
-        return f"約{int(estimated_sec)}秒"
-    elif estimated_sec < 3600:
-        return f"約{int(estimated_sec/60)}分{int(estimated_sec%60)}秒"
-    else:
-        return f"約{int(estimated_sec/3600)}時間{int((estimated_sec%3600)/60)}分"
-
 
 # ================================================================
 # ヘッダー
@@ -311,14 +337,14 @@ def estimate_transcription_time(file_size_bytes, model_name="medium"):
 st.markdown("""
 <div style='text-align:center;padding:16px 0 8px 0;'>
   <span style='font-size:52px;'>🐷</span>
-  <h1 style='margin:4px 0 2px 0;font-size:22px;'>万世ぶーちゃんの議事録サポートアプリ v2.5</h1>
+  <h1 style='margin:4px 0 2px 0;font-size:22px;'>万世ぶーちゃんの議事録サポートアプリ v2.6</h1>
   <p style='color:#888;font-size:12px;margin:0;'>テキストを貼り付けるだけで議事録を自動作成🐷</p>
 </div>""", unsafe_allow_html=True)
 
 check_ram_on_startup()
 IS_COLAB = os.path.exists('/content')
 
-tab1, tab2 = st.tabs(["📝 テキストから作成（すぐ使える）", "🎤 音声から作成（Colab専用）"])
+tab1, tab2 = st.tabs(["📝 テキストから作成（すぐ使える）", "🎤 音声から作成"])
 
 # ================================================================
 # タブ1: テキスト直接入力 → 議事録生成（常時稼働）
@@ -395,232 +421,409 @@ with tab1:
                     st.error(f"議事録生成エラー: {e}")
 
 # ================================================================
-# タブ2: 音声文字起こし（Colab専用）
+# タブ2: 音声文字起こし（クラウドAPI + Colab）
 # ================================================================
 with tab2:
-    if not IS_COLAB:
-        st.warning("""
-        🎤 **音声文字起こし機能は Colab 専用です**
+    st.markdown("#### 音声ファイルをアップロードして文字起こし＋議事録を作成します")
 
-        以下の手順で使えます：
-        1. [Colab を開く](https://colab.research.google.com/drive/1QYZcwJuFX47EPRnsEBLRzZjQOIM2TEI2) をクリック
-        2. Step 2 → Start Streamlit セルを実行（約30秒）
-        3. 音声ファイルをアップロードして文字起こし
-        4. 完了したテキストをコピー → 「📝 テキストから作成」タブに貼り付け
-        """)
-    else:
-        DEFAULTS = {
-            "step": 1, "audio_path": None, "file_base": "",
-            "raw_text": "", "segments_data": [], "speaker_turns": [],
-            "speaker_map": {}, "q_date": "", "q_title": "", "q_place": "",
-            "participants": "", "emphasis_items": "", "decisions": "",
-            "pending_items": "", "mode": "議事録＋文字起こしデータ",
-            "minutes_html": "", "legal_html": "", "drive_save_dir": "",
-            "model_size": "medium",
-        }
-        for k, v in DEFAULTS.items():
-            if k not in st.session_state:
-                st.session_state[k] = v
+    # ---- エンジン選択 ----
+    engine = st.radio(
+        "🔧 文字起こしエンジンを選択",
+        [
+            "🤖 Groq Whisper（無料・高速・話者識別なし）",
+            "🎯 AssemblyAI（話者識別あり・100時間無料）",
+            "🐷 Colab ローカル（Colab起動時のみ）",
+        ],
+        index=0,
+    )
 
-        steps_label = ["音声アップ", "文字起こし中", "話者設定", "会議メモ入力", "生成完了"]
-        st.progress((st.session_state.step - 1) / 4)
-        st.caption(steps_label[st.session_state.step - 1])
+    # ---- Groq エンジン ----
+    if engine == "🤖 Groq Whisper（無料・高速・話者識別なし）":
+        if not GROQ_API_KEY:
+            st.warning("""
+⚠️ **GROQ_API_KEY が設定されていません**
 
-        import glob
-        backups = sorted(glob.glob("/tmp/Claude/*.json"), reverse=True)[:5]
-        if backups and st.session_state.step == 1:
-            names = [os.path.basename(b) for b in backups]
-            st.info(f"💾 以前の処理データが {len(backups)} 件見つかりました。")
-            selected = st.selectbox("復旧するセッションを選択:", names)
-            if st.button("🔄 このデータから再開する"):
-                import json
-                with open(backups[names.index(selected)]) as bf:
-                    bdata = json.load(bf)
-                for k, v in bdata.items():
-                    st.session_state[k] = v
-                st.rerun()
-
-        if st.session_state.step == 1:
-            st.subheader("🎙 Step 1：音声ファイルをえらぶ")
-            model_size = st.selectbox("Whisperモデル", ["medium", "small", "large-v2"],
-                index=0, help="medium推奨")
-            mode2 = st.radio("出力スタイル 📝", ["議事録のみ", "議事録＋文字起こしデータ"], index=1)
-            st.session_state["mode"] = mode2
+1. [console.groq.com](https://console.groq.com) で無料アカウントを作成
+2. API Keys → Create API Key で `gsk_...` キーを取得
+3. Streamlit Cloud の Secrets に `GROQ_API_KEY = "gsk_..."` を追加
+            """)
+        else:
+            st.info("💡 Groq Whisper は無料で高速に文字起こしできます。話者識別（誰が話したか）はありません。")
             uploaded = st.file_uploader("音声ファイルをアップロード",
-                type=["m4a", "mp3", "wav", "mp4", "ogg", "flac"])
+                type=["m4a", "mp3", "wav", "mp4", "ogg", "flac"],
+                key="groq_upload")
+
             if uploaded:
                 file_size_mb = uploaded.size / (1024 * 1024)
-                est_time = estimate_transcription_time(uploaded.size, model_size)
-                st.info(f"📊 ファイルサイズ: {file_size_mb:.1f} MB　⏱ 予想処理時間: {est_time}")
-            if uploaded and st.button("▶ テキスト変換スタート", type="primary"):
-                from pydub import AudioSegment
-                file_base = Path(uploaded.name).stem
-                raw_path = f"/tmp/{uploaded.name}"
-                with open(raw_path, "wb") as f:
-                    f.write(uploaded.getvalue())
-                audio = AudioSegment.from_file(raw_path)
-                audio.export("/tmp/meeting.wav", format="wav")
-                st.session_state.update({
-                    "file_base": file_base, "model_size": model_size,
-                    "mode": mode2, "audio_path": "/tmp/meeting.wav", "step": 2,
-                })
-                st.rerun()
+                st.info(f"📊 ファイルサイズ: {file_size_mb:.1f} MB")
 
-        elif st.session_state.step == 2:
-            st.subheader("⚙ Step 2：文字起こし中...")
-            prog_ph = st.empty()
-            show_animal_progress(prog_ph, 10, "準備中...")
-            try:
-                from faster_whisper import WhisperModel
-                show_animal_progress(prog_ph, 30, "Whisperモデル読み込み中...")
-                wmodel = WhisperModel(st.session_state.model_size, device="cpu", compute_type="int8")
-                show_animal_progress(prog_ph, 50, "文字起こし中...")
-                segs_iter, _ = wmodel.transcribe(st.session_state.audio_path, language="ja", beam_size=5)
-                segments = list(segs_iter)
-                del wmodel
-                import gc; gc.collect()
-                show_animal_progress(prog_ph, 70, "話者識別中...")
-                mem = __import__("psutil").virtual_memory()
-                diarization = None
-                if mem.percent < 80:
-                    try:
-                        from pyannote.audio import Pipeline
-                        from pyannote.audio.pipelines.utils.hook import ProgressHook
-                        pipeline = Pipeline.from_pretrained(
-                            "pyannote/speaker-diarization-3.1",
-                            use_auth_token=os.environ.get("HF_TOKEN", ""))
-                        with ProgressHook() as hook:
-                            diarization = pipeline(st.session_state.audio_path, hook=hook)
-                    except Exception as e:
-                        st.warning(f"話者識別エラー（スキップ）: {e}")
-                else:
-                    st.warning("⚠️ RAM不足のため話者識別をスキップしました")
-                show_animal_progress(prog_ph, 90, "テキスト整形中...")
-                segments_data = [{"start": s.start, "end": s.end, "text": s.text.strip()} for s in segments]
-                speaker_turns = []
-                if diarization:
-                    for turn, _, label in diarization.itertracks(yield_label=True):
-                        speaker_turns.append({"start": turn.start, "end": turn.end, "speaker": label})
-                raw_text_built = ""
-                if speaker_turns:
-                    for seg in segments_data:
-                        spk = next((t["speaker"] for t in speaker_turns
-                            if t["start"] <= seg["start"] < t["end"]), "不明")
-                        raw_text_built += "[" + str(round(seg["start"], 1)) + "s] " + spk + ": " + seg["text"] + "\n"
-                else:
-                    for seg in segments_data:
-                        raw_text_built += "[" + str(round(seg["start"], 1)) + "s] " + seg["text"] + "\n"
-                st.session_state.update({
-                    "raw_text": raw_text_built, "segments_data": segments_data,
-                    "speaker_turns": speaker_turns, "step": 3,
-                })
-                import json, pathlib
-                pathlib.Path("/tmp/Claude").mkdir(exist_ok=True)
-                with open("/tmp/Claude/" + st.session_state.file_base + "_backup.json", "w") as bk:
-                    json.dump({"raw_text": raw_text_built, "file_base": st.session_state.file_base,
-                               "segments_data": segments_data, "speaker_turns": speaker_turns}, bk)
-                show_animal_progress(prog_ph, 100, "完了！")
-                st.rerun()
-            except Exception as e:
-                st.error(f"文字起こしエラー: {e}")
+                mode_g = st.radio("出力スタイル 📝",
+                    ["議事録のみ", "議事録＋文字起こしデータ"], index=1, key="mode_groq")
+                col1, col2 = st.columns(2)
+                with col1:
+                    q_date_g  = st.text_input("📅 会議日時", placeholder="例: 2026年3月30日", key="date_g")
+                    q_place_g = st.text_input("📍 場所", placeholder="例: 会議室A", key="place_g")
+                with col2:
+                    q_title_g = st.text_input("📌 タイトル", placeholder="例: 定例ミーティング", key="title_g")
+                    participants_g = st.text_area("👥 参加者",
+                        placeholder="例: ぶーちゃん、もーちゃん", height=68, key="part_g")
+                emphasis_g  = st.text_area("⭐ 強調したい項目", height=56, key="emph_g",
+                    placeholder="例: 費用負担について")
+                decisions_g = st.text_area("✅ 決定事項", height=56, key="deci_g",
+                    placeholder="例: 来月までにサンプル提出")
+                pending_g   = st.text_area("📌 未決定の宿題事項", height=56, key="pend_g",
+                    placeholder="例: もーちゃんから来週中に回答")
 
-        elif st.session_state.step == 3:
-            st.subheader("👥 Step 3：話している人の名前を設定")
-            speakers = sorted(set(t["speaker"] for t in st.session_state.speaker_turns)) \
-                if st.session_state.speaker_turns else []
-            speaker_map = {}
-            for sp in speakers:
-                name = st.text_input(f"{sp} の名前（例: ぶーちゃん）:",
-                    value=st.session_state.speaker_map.get(sp, ""), key=f"sp_{sp}")
-                speaker_map[sp] = name
-            if st.button("▶ 次のステップへ", type="primary"):
-                new_text = st.session_state.raw_text
-                for sp, name in speaker_map.items():
-                    if name:
-                        new_text = new_text.replace(sp, name)
-                st.session_state["raw_text"] = new_text
-                st.session_state["speaker_map"] = speaker_map
-                st.session_state["step"] = 4
-                st.rerun()
-
-        elif st.session_state.step == 4:
-            st.subheader("📋 Step 4：会議のメモを入力")
-            participants = st.text_area("参加者（氏名・所属）", value=st.session_state.participants,
-                placeholder="例: ぶーちゃん社長（万世ぶーちゃん商事）")
-            emphasis  = st.text_area("強調したい項目", value=st.session_state.emphasis_items,
-                placeholder="例: 次回の搬入日程や費用負担についてまとめたい")
-            decisions = st.text_area("決定事項", value=st.session_state.decisions,
-                placeholder="例: 来月までにサンプルを提出する")
-            pending   = st.text_area("未決定の宿題事項", value=st.session_state.pending_items,
-                placeholder="例: もーちゃん食品から来週中に回答をもらう")
-            col1, col2 = st.columns(2)
-            with col1:
-                q_date  = st.text_input("会議日時", value=st.session_state.q_date)
-                q_place = st.text_input("場所", value=st.session_state.q_place)
-            with col2:
-                q_title = st.text_input("会議タイトル", value=st.session_state.q_title)
-            mode3 = st.radio("出力スタイル 📝", ["議事録のみ", "議事録＋文字起こしデータ"],
-                index=0 if st.session_state.mode == "議事録のみ" else 1)
-            if st.button("🐷 議事録を作る", type="primary"):
-                st.session_state.update({
-                    "participants": participants, "emphasis_items": emphasis,
-                    "decisions": decisions, "pending_items": pending,
-                    "q_date": q_date, "q_title": q_title, "q_place": q_place,
-                    "mode": mode3, "step": 5,
-                })
-                st.rerun()
-
-        elif st.session_state.step == 5:
-            st.subheader("✅ Step 5：かんたん生成＆ダウンロード")
-            if not st.session_state.minutes_html:
-                with st.spinner("Claude API で議事録を生成中..."):
-                    try:
-                        minutes_html = call_claude_minutes(
-                            st.session_state.raw_text, st.session_state.q_date,
-                            st.session_state.q_title, st.session_state.q_place,
-                            st.session_state.participants, st.session_state.emphasis_items,
-                            st.session_state.decisions, st.session_state.pending_items,
-                        )
-                        st.session_state["minutes_html"] = minutes_html
-                    except Exception as e:
-                        st.error(f"議事録生成エラー: {e}")
-                if st.session_state.mode == "議事録＋文字起こしデータ":
-                    with st.spinner("文字起こしデータを整理中..."):
+                if st.button("▶ 文字起こし＋議事録を作成（Groq）", type="primary"):
+                    # 音声保存
+                    raw_path = "/tmp/" + uploaded.name
+                    with open(raw_path, "wb") as f:
+                        f.write(uploaded.getvalue())
+                    with st.spinner("🎤 Groq で文字起こし中... (通常30秒〜2分)"):
                         try:
-                            legal_html = call_claude_legal(
-                                st.session_state.raw_text, st.session_state.q_title)
-                            st.session_state["legal_html"] = legal_html
+                            raw_text_g = transcribe_groq(raw_path)
+                            st.success("✅ 文字起こし完了！")
+                            st.text_area("📄 文字起こし結果（確認・編集可）", value=raw_text_g, height=200,
+                                key="groq_result")
                         except Exception as e:
-                            st.warning(f"文字起こしデータ整理エラー: {e}")
-                play_completion_sound()
+                            st.error(f"文字起こしエラー: {e}")
+                            raw_text_g = ""
 
-            fb = st.session_state.file_base
-            from datetime import datetime
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            st.divider()
-            if st.session_state.minutes_html:
-                st.markdown("#### 📄 議事録")
-                st.download_button("📄 議事録 HTML をダウンロード",
-                    data=st.session_state.minutes_html.encode("utf-8"),
-                    file_name=f"{fb}_議事録_{ts}.html", mime="text/html", use_container_width=True)
-            if st.session_state.legal_html:
-                st.markdown("#### 📄 文字起こしデータ")
-                st.download_button("📄 文字起こしデータ HTML をダウンロード",
-                    data=st.session_state.legal_html.encode("utf-8"),
-                    file_name=f"{fb}_文字起こし_{ts}.html", mime="text/html", use_container_width=True)
-            if st.session_state.raw_text:
-                st.download_button("📝 文字起こし TXT をダウンロード",
-                    data=st.session_state.raw_text.encode("utf-8"),
-                    file_name=f"{fb}_文字起こし_{ts}.txt", mime="text/plain", use_container_width=True)
-            st.divider()
-            col3, col4 = st.columns(2)
-            with col3:
-                if st.button("🔄 別の音声ファイルを処理する"):
-                    for k, v in DEFAULTS.items():
+                    if raw_text_g and ANTHROPIC_API_KEY:
+                        with st.spinner("🐷 Claude が議事録を生成中..."):
+                            try:
+                                from datetime import datetime
+                                ts_g = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                fb_g = q_title_g.strip().replace(" ", "_") or "議事録"
+                                minutes_html_g = call_claude_minutes(
+                                    raw_text_g, q_date_g, q_title_g, q_place_g,
+                                    participants_g, emphasis_g, decisions_g, pending_g)
+                                st.markdown("#### 📄 議事録")
+                                st.download_button("📄 議事録 HTML をダウンロード",
+                                    data=minutes_html_g.encode("utf-8"),
+                                    file_name=f"{fb_g}_{ts_g}.html",
+                                    mime="text/html", use_container_width=True, key="dl_min_g")
+                                if mode_g == "議事録＋文字起こしデータ":
+                                    legal_html_g = call_claude_legal(raw_text_g, q_title_g)
+                                    st.markdown("#### 📄 文字起こしデータ")
+                                    st.download_button("📄 文字起こしデータ HTML をダウンロード",
+                                        data=legal_html_g.encode("utf-8"),
+                                        file_name=f"{fb_g}_文字起こし_{ts_g}.html",
+                                        mime="text/html", use_container_width=True, key="dl_leg_g")
+                                st.download_button("📝 文字起こし TXT をダウンロード",
+                                    data=raw_text_g.encode("utf-8"),
+                                    file_name=f"{fb_g}_文字起こし_{ts_g}.txt",
+                                    mime="text/plain", use_container_width=True, key="dl_txt_g")
+                                play_completion_sound()
+                            except Exception as e:
+                                st.error(f"議事録生成エラー: {e}")
+
+    # ---- AssemblyAI エンジン ----
+    elif engine == "🎯 AssemblyAI（話者識別あり・100時間無料）":
+        if not ASSEMBLYAI_API_KEY:
+            st.warning("""
+⚠️ **ASSEMBLYAI_API_KEY が設定されていません**
+
+1. [assemblyai.com](https://www.assemblyai.com) で無料アカウントを作成（100時間無料）
+2. ダッシュボードから API Key を取得
+3. Streamlit Cloud の Secrets に `ASSEMBLYAI_API_KEY = "..."` を追加
+            """)
+        else:
+            st.info("💡 AssemblyAI は **話者識別（誰が話したか）** に対応しています。処理に1〜3分かかります。")
+            uploaded_a = st.file_uploader("音声ファイルをアップロード",
+                type=["m4a", "mp3", "wav", "mp4", "ogg", "flac"],
+                key="aai_upload")
+
+            if uploaded_a:
+                file_size_mb_a = uploaded_a.size / (1024 * 1024)
+                st.info(f"📊 ファイルサイズ: {file_size_mb_a:.1f} MB")
+
+                speakers_n = st.number_input("👥 話者の人数（目安）", min_value=1, max_value=10, value=2, key="spk_n")
+                mode_a = st.radio("出力スタイル 📝",
+                    ["議事録のみ", "議事録＋文字起こしデータ"], index=1, key="mode_aai")
+                col1a, col2a = st.columns(2)
+                with col1a:
+                    q_date_a  = st.text_input("📅 会議日時", placeholder="例: 2026年3月30日", key="date_a")
+                    q_place_a = st.text_input("📍 場所", placeholder="例: 会議室A", key="place_a")
+                with col2a:
+                    q_title_a = st.text_input("📌 タイトル", placeholder="例: 定例ミーティング", key="title_a")
+                    participants_a = st.text_area("👥 参加者",
+                        placeholder="例: ぶーちゃん、もーちゃん", height=68, key="part_a")
+                emphasis_a  = st.text_area("⭐ 強調したい項目", height=56, key="emph_a",
+                    placeholder="例: 費用負担について")
+                decisions_a = st.text_area("✅ 決定事項", height=56, key="deci_a",
+                    placeholder="例: 来月までにサンプル提出")
+                pending_a   = st.text_area("📌 未決定の宿題事項", height=56, key="pend_a",
+                    placeholder="例: もーちゃんから来週中に回答")
+
+                if st.button("▶ 文字起こし＋議事録を作成（AssemblyAI）", type="primary"):
+                    raw_path_a = "/tmp/" + uploaded_a.name
+                    with open(raw_path_a, "wb") as f:
+                        f.write(uploaded_a.getvalue())
+                    with st.spinner("🎤 AssemblyAI で文字起こし中... (通常1〜3分)"):
+                        try:
+                            raw_text_a = transcribe_assemblyai(raw_path_a, int(speakers_n))
+                            st.success("✅ 文字起こし完了！（話者識別済み）")
+                            st.text_area("📄 文字起こし結果（確認・編集可）", value=raw_text_a, height=200,
+                                key="aai_result")
+                        except Exception as e:
+                            st.error(f"文字起こしエラー: {e}")
+                            raw_text_a = ""
+
+                    if raw_text_a and ANTHROPIC_API_KEY:
+                        with st.spinner("🐷 Claude が議事録を生成中..."):
+                            try:
+                                from datetime import datetime
+                                ts_a = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                fb_a = q_title_a.strip().replace(" ", "_") or "議事録"
+                                minutes_html_a = call_claude_minutes(
+                                    raw_text_a, q_date_a, q_title_a, q_place_a,
+                                    participants_a, emphasis_a, decisions_a, pending_a)
+                                st.markdown("#### 📄 議事録")
+                                st.download_button("📄 議事録 HTML をダウンロード",
+                                    data=minutes_html_a.encode("utf-8"),
+                                    file_name=f"{fb_a}_{ts_a}.html",
+                                    mime="text/html", use_container_width=True, key="dl_min_a")
+                                if mode_a == "議事録＋文字起こしデータ":
+                                    legal_html_a = call_claude_legal(raw_text_a, q_title_a)
+                                    st.markdown("#### 📄 文字起こしデータ")
+                                    st.download_button("📄 文字起こしデータ HTML をダウンロード",
+                                        data=legal_html_a.encode("utf-8"),
+                                        file_name=f"{fb_a}_文字起こし_{ts_a}.html",
+                                        mime="text/html", use_container_width=True, key="dl_leg_a")
+                                st.download_button("📝 文字起こし TXT をダウンロード",
+                                    data=raw_text_a.encode("utf-8"),
+                                    file_name=f"{fb_a}_文字起こし_{ts_a}.txt",
+                                    mime="text/plain", use_container_width=True, key="dl_txt_a")
+                                play_completion_sound()
+                            except Exception as e:
+                                st.error(f"議事録生成エラー: {e}")
+
+    # ---- Colab ローカルエンジン ----
+    else:
+        if not IS_COLAB:
+            st.warning("""
+🐷 **Colab ローカルモードは Colab 起動時のみ使えます**
+
+以下の手順でお使いください：
+1. [Colab を開く](https://colab.research.google.com/drive/1QYZcwJuFX47EPRnsEBLRzZjQOIM2TEI2) をクリック
+2. Step 2 → Start Streamlit セルを実行（約30秒）
+3. 音声ファイルをアップロードして文字起こし
+4. 完了したテキストをコピー → 「📝 テキストから作成」タブに貼り付け
+
+**または上記の Groq / AssemblyAI エンジンをお使いください（Colab 不要）**
+            """)
+        else:
+            st.info("🐷 Colab ローカル Whisper + pyannote 話者識別モード")
+            colab_defaults = {
+                "step": 1, "audio_path": None, "file_base": "",
+                "raw_text": "", "segments_data": [], "speaker_turns": [],
+                "speaker_map": {}, "q_date": "", "q_title": "", "q_place": "",
+                "participants": "", "emphasis_items": "", "decisions": "",
+                "pending_items": "", "mode": "議事録＋文字起こしデータ",
+                "minutes_html": "", "legal_html": "",
+                "model_size": "medium",
+            }
+            for k, v in colab_defaults.items():
+                if k not in st.session_state:
+                    st.session_state[k] = v
+
+            steps_label = ["音声アップ", "文字起こし中", "話者設定", "会議メモ入力", "生成完了"]
+            st.progress((st.session_state.step - 1) / 4)
+            st.caption(steps_label[st.session_state.step - 1])
+
+            import glob as _glob
+            backups = sorted(_glob.glob("/tmp/Claude/*.json"), reverse=True)[:5]
+            if backups and st.session_state.step == 1:
+                names = [os.path.basename(b) for b in backups]
+                st.info(f"💾 以前の処理データが {len(backups)} 件見つかりました。")
+                selected = st.selectbox("復旧するセッションを選択:", names)
+                if st.button("🔄 このデータから再開する"):
+                    with open(backups[names.index(selected)]) as bf:
+                        bdata = json.load(bf)
+                    for k, v in bdata.items():
                         st.session_state[k] = v
                     st.rerun()
-            with col4:
-                if st.button("✏️ 会議情報を修正して再生成"):
-                    st.session_state["step"] = 4
-                    st.session_state["minutes_html"] = ""
+
+            if st.session_state.step == 1:
+                st.subheader("🎙 Step 1：音声ファイルをえらぶ")
+                model_size = st.selectbox("Whisperモデル", ["medium", "small", "large-v2"], index=0)
+                mode2 = st.radio("出力スタイル 📝", ["議事録のみ", "議事録＋文字起こしデータ"], index=1, key="mode_colab")
+                st.session_state["mode"] = mode2
+                uploaded_c = st.file_uploader("音声ファイルをアップロード",
+                    type=["m4a", "mp3", "wav", "mp4", "ogg", "flac"], key="colab_upload")
+                if uploaded_c:
+                    file_size_mb_c = uploaded_c.size / (1024 * 1024)
+                    est_time = estimate_transcription_time(uploaded_c.size, model_size)
+                    st.info(f"📊 ファイルサイズ: {file_size_mb_c:.1f} MB　⏱ 予想処理時間: {est_time}")
+                if uploaded_c and st.button("▶ テキスト変換スタート", type="primary"):
+                    from pydub import AudioSegment
+                    file_base_c = Path(uploaded_c.name).stem
+                    raw_path_c = "/tmp/" + uploaded_c.name
+                    with open(raw_path_c, "wb") as f:
+                        f.write(uploaded_c.getvalue())
+                    audio = AudioSegment.from_file(raw_path_c)
+                    audio.export("/tmp/meeting.wav", format="wav")
+                    st.session_state.update({
+                        "file_base": file_base_c, "model_size": model_size,
+                        "mode": mode2, "audio_path": "/tmp/meeting.wav", "step": 2,
+                    })
                     st.rerun()
+
+            elif st.session_state.step == 2:
+                st.subheader("⚙ Step 2：文字起こし中...")
+                prog_ph = st.empty()
+                show_animal_progress(prog_ph, 10, "準備中...")
+                try:
+                    from faster_whisper import WhisperModel
+                    show_animal_progress(prog_ph, 30, "Whisperモデル読み込み中...")
+                    wmodel = WhisperModel(st.session_state.model_size, device="cpu", compute_type="int8")
+                    show_animal_progress(prog_ph, 50, "文字起こし中...")
+                    segs_iter, _ = wmodel.transcribe(st.session_state.audio_path, language="ja", beam_size=5)
+                    segments = list(segs_iter)
+                    del wmodel
+                    gc.collect()
+                    show_animal_progress(prog_ph, 70, "話者識別中...")
+                    mem = psutil.virtual_memory()
+                    diarization = None
+                    if mem.percent < 80:
+                        try:
+                            from pyannote.audio import Pipeline
+                            from pyannote.audio.pipelines.utils.hook import ProgressHook
+                            pipeline = Pipeline.from_pretrained(
+                                "pyannote/speaker-diarization-3.1",
+                                use_auth_token=HF_TOKEN)
+                            with ProgressHook() as hook:
+                                diarization = pipeline(st.session_state.audio_path, hook=hook)
+                        except Exception as e:
+                            st.warning(f"話者識別エラー（スキップ）: {e}")
+                    else:
+                        st.warning("⚠️ RAM不足のため話者識別をスキップしました")
+                    show_animal_progress(prog_ph, 90, "テキスト整形中...")
+                    segments_data = [{"start": s.start, "end": s.end, "text": s.text.strip()} for s in segments]
+                    speaker_turns = []
+                    if diarization:
+                        for turn, _, label in diarization.itertracks(yield_label=True):
+                            speaker_turns.append({"start": turn.start, "end": turn.end, "speaker": label})
+                    raw_text_built = ""
+                    if speaker_turns:
+                        for seg in segments_data:
+                            spk = next((t["speaker"] for t in speaker_turns
+                                if t["start"] <= seg["start"] < t["end"]), "不明")
+                            raw_text_built += "[" + str(round(seg["start"], 1)) + "s] " + spk + ": " + seg["text"] + "\n"
+                    else:
+                        for seg in segments_data:
+                            raw_text_built += "[" + str(round(seg["start"], 1)) + "s] " + seg["text"] + "\n"
+                    st.session_state.update({
+                        "raw_text": raw_text_built, "segments_data": segments_data,
+                        "speaker_turns": speaker_turns, "step": 3,
+                    })
+                    pathlib.Path("/tmp/Claude").mkdir(exist_ok=True)
+                    with open("/tmp/Claude/" + st.session_state.file_base + "_backup.json", "w") as bk:
+                        json.dump({"raw_text": raw_text_built, "file_base": st.session_state.file_base,
+                                   "segments_data": segments_data, "speaker_turns": speaker_turns}, bk)
+                    show_animal_progress(prog_ph, 100, "完了！")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"文字起こしエラー: {e}")
+
+            elif st.session_state.step == 3:
+                st.subheader("👥 Step 3：話している人の名前を設定")
+                speakers = sorted(set(t["speaker"] for t in st.session_state.speaker_turns)) \
+                    if st.session_state.speaker_turns else []
+                speaker_map = {}
+                for sp in speakers:
+                    name = st.text_input(f"{sp} の名前（例: ぶーちゃん）:",
+                        value=st.session_state.speaker_map.get(sp, ""), key=f"sp_{sp}")
+                    speaker_map[sp] = name
+                if st.button("▶ 次のステップへ", type="primary"):
+                    new_text = st.session_state.raw_text
+                    for sp, name in speaker_map.items():
+                        if name:
+                            new_text = new_text.replace(sp, name)
+                    st.session_state["raw_text"] = new_text
+                    st.session_state["speaker_map"] = speaker_map
+                    st.session_state["step"] = 4
+                    st.rerun()
+
+            elif st.session_state.step == 4:
+                st.subheader("📋 Step 4：会議のメモを入力")
+                participants_c = st.text_area("参加者（氏名・所属）", value=st.session_state.participants,
+                    placeholder="例: ぶーちゃん社長（万世ぶーちゃん商事）")
+                emphasis_c  = st.text_area("強調したい項目", value=st.session_state.emphasis_items,
+                    placeholder="例: 次回の搬入日程や費用負担についてまとめたい")
+                decisions_c = st.text_area("決定事項", value=st.session_state.decisions,
+                    placeholder="例: 来月までにサンプルを提出する")
+                pending_c   = st.text_area("未決定の宿題事項", value=st.session_state.pending_items,
+                    placeholder="例: もーちゃん食品から来週中に回答をもらう")
+                col1c, col2c = st.columns(2)
+                with col1c:
+                    q_date_c  = st.text_input("会議日時", value=st.session_state.q_date)
+                    q_place_c = st.text_input("場所", value=st.session_state.q_place)
+                with col2c:
+                    q_title_c = st.text_input("会議タイトル", value=st.session_state.q_title)
+                mode3 = st.radio("出力スタイル 📝", ["議事録のみ", "議事録＋文字起こしデータ"],
+                    index=0 if st.session_state.mode == "議事録のみ" else 1, key="mode3")
+                if st.button("🐷 議事録を作る", type="primary"):
+                    st.session_state.update({
+                        "participants": participants_c, "emphasis_items": emphasis_c,
+                        "decisions": decisions_c, "pending_items": pending_c,
+                        "q_date": q_date_c, "q_title": q_title_c, "q_place": q_place_c,
+                        "mode": mode3, "step": 5,
+                    })
+                    st.rerun()
+
+            elif st.session_state.step == 5:
+                st.subheader("✅ Step 5：かんたん生成＆ダウンロード")
+                if not st.session_state.minutes_html:
+                    with st.spinner("Claude API で議事録を生成中..."):
+                        try:
+                            minutes_html_c = call_claude_minutes(
+                                st.session_state.raw_text, st.session_state.q_date,
+                                st.session_state.q_title, st.session_state.q_place,
+                                st.session_state.participants, st.session_state.emphasis_items,
+                                st.session_state.decisions, st.session_state.pending_items,
+                            )
+                            st.session_state["minutes_html"] = minutes_html_c
+                        except Exception as e:
+                            st.error(f"議事録生成エラー: {e}")
+                    if st.session_state.mode == "議事録＋文字起こしデータ":
+                        with st.spinner("文字起こしデータを整理中..."):
+                            try:
+                                legal_html_c = call_claude_legal(
+                                    st.session_state.raw_text, st.session_state.q_title)
+                                st.session_state["legal_html"] = legal_html_c
+                            except Exception as e:
+                                st.warning(f"文字起こしデータ整理エラー: {e}")
+                    play_completion_sound()
+
+                fb_c = st.session_state.file_base
+                from datetime import datetime as _dt
+                ts_c = _dt.now().strftime("%Y%m%d_%H%M%S")
+                st.divider()
+                if st.session_state.minutes_html:
+                    st.markdown("#### 📄 議事録")
+                    st.download_button("📄 議事録 HTML をダウンロード",
+                        data=st.session_state.minutes_html.encode("utf-8"),
+                        file_name=f"{fb_c}_議事録_{ts_c}.html", mime="text/html", use_container_width=True)
+                if st.session_state.legal_html:
+                    st.markdown("#### 📄 文字起こしデータ")
+                    st.download_button("📄 文字起こしデータ HTML をダウンロード",
+                        data=st.session_state.legal_html.encode("utf-8"),
+                        file_name=f"{fb_c}_文字起こし_{ts_c}.html", mime="text/html", use_container_width=True)
+                if st.session_state.raw_text:
+                    st.download_button("📝 文字起こし TXT をダウンロード",
+                        data=st.session_state.raw_text.encode("utf-8"),
+                        file_name=f"{fb_c}_文字起こし_{ts_c}.txt", mime="text/plain", use_container_width=True)
+                st.divider()
+                col3c, col4c = st.columns(2)
+                with col3c:
+                    if st.button("🔄 別の音声ファイルを処理する"):
+                        for k, v in colab_defaults.items():
+                            st.session_state[k] = v
+                        st.rerun()
+                with col4c:
+                    if st.button("✏️ 会議情報を修正して再生成"):
+                        st.session_state["step"] = 4
+                        st.session_state["minutes_html"] = ""
+                        st.rerun()
