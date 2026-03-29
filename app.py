@@ -95,7 +95,7 @@ DEFAULTS = {
     "speaker_turns": None, "speaker_names": {}, "detected_speakers": [],
     "q_date": str(date.today()), "q_title": "", "q_place": "",
     "participants": "", "emphasis_items": "", "decisions": "",
-    "pending_items": "", "mode": "議事録のみ",
+    "pending_items": "", "mode": "議事録＋文字起こしデータ",
     "minutes_html": "", "legal_html": "",
     "drive_save_dir": "", "crash_recovered": False,
     "model_size": "medium",
@@ -199,7 +199,7 @@ def call_claude_minutes(raw_text, q_date, q_title, q_place,
 def call_claude_legal(raw_text, q_title):
     import anthropic as _ant
     client = _ant.Anthropic(api_key=ANTHROPIC_API_KEY)
-    prompt = f"""以下の会議文字起こしから、裁判・法的交渉で有利になる重要箇所を抽出した証拠資料HTMLを作成してください。
+    prompt = f"""以下の会議文字起こしを、読みやすく整形した「文字起こしデータHTML」を作成してください。
 
 件名: {q_title}
 
@@ -208,7 +208,7 @@ def call_claude_legal(raw_text, q_title):
 
 【出力形式】
 - DOCTYPE〜</html>まで完全なHTML、A4印刷対応
-- 重要箇所を5〜10点抽出し、タイムスタンプ・発言内容・法的意義を表形式で整理
+- 重要な発言・決定事項を5〜10点抽出し、タイムスタンプ・発言者・内容を表形式で整理
 - 責任認定・約束・謝罪・矛盾する発言・優越的地位の乱用を優先抽出
 - 重要度が高い箇所は赤背景または赤枠で強調
 """
@@ -229,7 +229,7 @@ def save_to_drive(file_base, minutes_html, legal_html, raw_text,
             f.write(content)
         saved.append(p)
     if minutes_html: w(f"{file_base}_議事録.html", minutes_html)
-    if legal_html:   w(f"{file_base}_証拠資料.html", legal_html)
+    if legal_html:   w(f"{file_base}_文字起こし.html", legal_html)
     if raw_text:     w(f"{file_base}_文字起こし.txt", raw_text)
     bak = {"segments": segments_data or [], "speaker_turns": speaker_turns or []}
     w(f"{file_base}_backup.json", json.dumps(bak, ensure_ascii=False, indent=2))
@@ -311,7 +311,7 @@ st.markdown("""
 <div style='text-align:center;padding:16px 0 8px 0;'>
   <span style='font-size:52px;'>🐷</span>
   <h1 style='margin:4px 0 2px 0;font-size:22px;'>万世ぶーちゃんの議事録サポートアプリ v2.5</h1>
-  <p style='color:#888;font-size:12px;margin:0;'>音声→文字起こし→話者識別→議事録HTML・証拠資料を自動生成</p>
+  <p style='color:#888;font-size:12px;margin:0;'>かんたん！音声→文字起こし→議事録を自動でお手伝い🐷</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -326,7 +326,7 @@ st.divider()
 # Step 1: ファイルアップロード
 # ================================================================
 if st.session_state.step == 1:
-    st.subheader("🎙 Step 1：音声ファイルのアップロード")
+    st.subheader("🎙 Step 1：音声ファイルをえらぶ")
 
     # 操作説明書（修正4）
     with st.expander("📖 操作説明書（クリックで開く）", expanded=False):
@@ -392,7 +392,7 @@ if st.session_state.step == 1:
     )
     model_size = st.selectbox("Whisperモデル", ["medium","small","large-v2"],
                                index=0, help="medium推奨。RAMが少ない場合はsmall")
-    mode = st.radio("生成モード", ["議事録のみ", "議事録＋証拠資料（法的資料）"], index=0)
+    mode = st.radio("出力スタイル 📝", ["議事録のみ", "議事録＋文字起こしデータ"], index=1)
 
     # ファイルサイズ・予想処理時間の表示（修正5）
     if uploaded:
@@ -403,7 +403,7 @@ if st.session_state.step == 1:
 
     st.markdown(f"現在の{ram_info()}", unsafe_allow_html=True)
 
-    if uploaded and st.button("▶ 文字起こし開始", type="primary"):
+    if uploaded and st.button("▶ テキスト変換スタート", type="primary"):
         # lazy import pydub
         IS_COLAB = os.path.exists('/content')
         if not IS_COLAB:
@@ -426,7 +426,7 @@ if st.session_state.step == 1:
 # Step 2: 文字起こし＆話者識別
 # ================================================================
 elif st.session_state.step == 2:
-    st.subheader("⚙ Step 2：文字起こし＆話者識別")
+    st.subheader("⚙ Step 2：文字起こし中...")
     st.markdown(f"対象: **{st.session_state.file_base}**")
     st.markdown(f"{ram_info()}", unsafe_allow_html=True)
 
@@ -529,7 +529,7 @@ elif st.session_state.step == 2:
 # Step 3: 話者名の設定
 # ================================================================
 elif st.session_state.step == 3:
-    st.subheader("👥 Step 3：話者名の設定")
+    st.subheader("👥 Step 3：話している人の名前を設定")
     st.markdown(f"{ram_info()}", unsafe_allow_html=True)
 
     if st.session_state.crash_recovered:
@@ -541,10 +541,10 @@ elif st.session_state.step == 3:
     name_map = {}
     for sp in detected:
         default = st.session_state.speaker_names.get(sp, sp)
-        name = st.text_input(f"{sp} の名前（例: 鹿野会長）:", value=default, key=f"sp_{sp}")
+        name = st.text_input(f"{sp} の名前（例: ぶーちゃん）:", value=default, key=f"sp_{sp}")
         name_map[sp] = name.strip() or sp
 
-    if st.button("▶ 次へ（会議情報入力）", type="primary"):
+    if st.button("▶ 次のステップへ", type="primary"):
         st.session_state["speaker_names"] = name_map
         merged = merge_segments_with_speakers(
             st.session_state.segments_data or [],
@@ -565,7 +565,7 @@ elif st.session_state.step == 3:
 # Step 4: 会議情報フォーム
 # ================================================================
 elif st.session_state.step == 4:
-    st.subheader("📋 Step 4：会議情報の入力")
+    st.subheader("📋 Step 4：会議のメモを入力")
     st.markdown(f"{ram_info()}", unsafe_allow_html=True)
     st.caption("文字起こしから読み取れない情報を補足してください（空欄でも生成できます）")
 
@@ -577,14 +577,14 @@ elif st.session_state.step == 4:
         with col2:
             q_title = st.text_input("件名・会議名", value=st.session_state.q_title)
         participants = st.text_area("参加者（氏名・所属）", value=st.session_state.participants,
-                                     placeholder="例: 鹿野会長（万世）、遠藤部長（タニコー）")
+                                     placeholder="例: ぶーちゃん社長（万世ぶーちゃん商事）、もーちゃん部長（もーちゃん食品）")
         emphasis  = st.text_area("強調したい項目・特記事項", value=st.session_state.emphasis_items,
-                                  placeholder="例: タニコーの過失を法的に明確にしたい")
+                                  placeholder="例: 次回の搬入日程や費用負担についてまとめたい")
         decisions = st.text_area("決定事項（わかっているもの）", value=st.session_state.decisions,
-                                  placeholder="例: 2号機を来週搬入する")
+                                  placeholder="例: 来月までにサンプルを提出する")
         pending   = st.text_area("未決定課題・宿題事項", value=st.session_state.pending_items,
-                                  placeholder="例: タニコーからの書面回答を19日に要求")
-        mode = st.radio("生成モード", ["議事録のみ", "議事録＋証拠資料（法的資料）"],
+                                  placeholder="例: もーちゃん食品から来週中に回答をもらう")
+        mode = st.radio("生成モード", ["議事録のみ", "議事録＋文字起こしデータ"],
                          index=0 if st.session_state.mode == "議事録のみ" else 1)
         submitted = st.form_submit_button("▶ 議事録を生成する", type="primary")
 
@@ -601,7 +601,7 @@ elif st.session_state.step == 4:
 # Step 5: 生成・ダウンロード
 # ================================================================
 elif st.session_state.step == 5:
-    st.subheader("✅ Step 5：生成・ダウンロード")
+    st.subheader("✅ Step 5：かんたん生成＆ダウンロード")
     st.markdown(f"{ram_info()}", unsafe_allow_html=True)
 
     if not st.session_state.minutes_html:
@@ -622,8 +622,8 @@ elif st.session_state.step == 5:
                 st.error(f"議事録生成エラー: {e}")
                 st.stop()
 
-        if st.session_state.mode != "議事録のみ":
-            with st.spinner("証拠資料を生成中..."):
+        if st.session_state.mode == "議事録＋文字起こしデータ":
+            with st.spinner("文字起こしデータを整理中..."):
                 try:
                     legal_html = call_claude_legal(
                         st.session_state.raw_text,
@@ -631,7 +631,7 @@ elif st.session_state.step == 5:
                     )
                     st.session_state["legal_html"] = legal_html
                 except Exception as e:
-                    st.warning(f"証拠資料生成エラー（スキップ）: {e}")
+                    st.warning(f"文字起こしデータ整理エラー（スキップ）: {e}")
 
         # Drive保存
         try:
@@ -673,17 +673,17 @@ elif st.session_state.step == 5:
             use_container_width=True,
         )
 
-    # 証拠資料ダウンロード（修正7: カスタムファイル名）
+    # 文字起こしデータダウンロード（修正7: カスタムファイル名）
     if st.session_state.legal_html:
-        st.markdown("#### ⚖ 証拠資料")
-        default_legal_name = f"{fb}_証拠資料_{ts}.html"
+        st.markdown("#### 📄 文字起こしデータ")
+        default_legal_name = f"{fb}_文字起こし_{ts}.html"
         legal_filename = st.text_input(
-            "証拠資料ファイル名（変更可）",
+            "文字起こしファイル名（変更可）",
             value=default_legal_name,
             key="legal_filename_input"
         )
         st.download_button(
-            "⚖ 証拠資料 HTML をダウンロード",
+            "📄 文字起こしデータ HTML をダウンロード",
             data=st.session_state.legal_html.encode("utf-8"),
             file_name=legal_filename,
             mime="text/html",
