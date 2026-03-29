@@ -576,6 +576,12 @@ elif st.session_state.step == 4:
             q_place = st.text_input("開催場所", value=st.session_state.q_place)
         with col2:
             q_title = st.text_input("件名・会議名", value=st.session_state.q_title)
+        # ── Colab連携案内 ──
+        st.info(
+            "🎤 **音声ファイルから文字起こしをする場合** は "
+            "[Colab で文字起こし](https://colab.research.google.com/drive/1QYZcwJuFX47EPRnsEBLRzZjQOIM2TEI2) "
+            "を先に実行してください。完了後、下の「文字起こしテキスト」欄に貼り付けると議事録が作れます 🐷"
+        )
         participants = st.text_area("参加者（氏名・所属）", value=st.session_state.participants,
                                      placeholder="例: ぶーちゃん社長（万世ぶーちゃん商事）、もーちゃん部長（もーちゃん食品）")
         emphasis  = st.text_area("強調したい項目・特記事項", value=st.session_state.emphasis_items,
