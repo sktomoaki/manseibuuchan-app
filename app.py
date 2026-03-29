@@ -51,25 +51,23 @@ def check_auth():
 </div>""", unsafe_allow_html=True)
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
-                if st.button("🔐 Google アカウントでログイン",
-                             type="primary", use_container_width=True):
-                    st.login("google")
+                st.button("🔐 Google アカウントでログイン",
+                          type="primary", use_container_width=True,
+                          on_click=st.login, args=("google",))
             st.stop()
 
         # アクセス許可チェック
         allowed = list(st.secrets.get("allowed_emails", []))
         if allowed and st.user.email not in allowed:
             st.error(f"⛔ {st.user.email} はアクセス権限がありません。管理者にお問い合わせください。")
-            if st.button("別のアカウントでログイン"):
-                st.logout()
+            st.button("別のアカウントでログイン", on_click=st.logout)
             st.stop()
 
         # サイドバーにユーザー情報
         with st.sidebar:
             st.markdown(f"👤 **{st.user.name}**")
             st.caption(st.user.email)
-            if st.button("ログアウト", use_container_width=True):
-                st.logout()
+            st.button("ログアウト", use_container_width=True, on_click=st.logout)
 
     except AttributeError:
         # Google OAuth 未設定時は月次パスワードにフォールバック
