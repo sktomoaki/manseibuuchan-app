@@ -217,6 +217,7 @@ def transcribe_assemblyai(audio_path: str, speakers_expected: int = 2) -> str:
     import assemblyai as aai
     aai.settings.api_key = ASSEMBLYAI_API_KEY
     config = aai.TranscriptionConfig(
+        speech_model=aai.SpeechModel.universal,
         language_code="ja",
         speaker_labels=True,
         speakers_expected=speakers_expected,
