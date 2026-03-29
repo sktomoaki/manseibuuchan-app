@@ -1,0 +1,12 @@
+{
+  "editor.fontSize": 14,
+  "editor.tabSize": 4,
+  "editor.formatOnSave": true,
+  "editor.wordWrap": "on",
+  "python.defaultInterpreterPath": "python",
+  "files.encoding": "utf8",
+  "editor.rulers": [100],
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.python"
+  }
+}
