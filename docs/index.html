@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>万世ぶーちゃん 取扱説明書</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",sans-serif;
+           background: #f0f4f8; color: #2d3748; line-height: 1.7; }
+    header { background: linear-gradient(135deg,#1a365d 0%,#2b6cb0 100%);
+             color:#fff; padding:40px 24px 32px; text-align:center; }
+    header .icon { font-size:56px; margin-bottom:12px; }
+    header h1   { font-size:2rem; letter-spacing:.05em; margin-bottom:6px; }
+    header p    { font-size:.95rem; opacity:.85; }
+    .container  { max-width:860px; margin:0 auto; padding:32px 20px 60px; }
+    section     { background:#fff; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.08);
+                  padding:28px 32px; margin-bottom:24px; }
+    section h2  { font-size:1.2rem; color:#2b6cb0; border-left:4px solid #2b6cb0;
+                  padding-left:12px; margin-bottom:20px; }
+    section h3  { font-size:1rem; color:#4a5568; margin:18px 0 8px; font-weight:bold; }
+
+    /* ── フロー図 ── */
+    .flow       { display:flex; align-items:center; gap:0; flex-wrap:wrap; margin:20px 0; }
+    .flow-box   { background:#ebf8ff; border:2px solid #bee3f8; border-radius:10px;
+                  padding:14px 18px; text-align:center; min-width:130px; flex:1; }
+    .flow-box .emoji { font-size:1.8rem; display:block; margin-bottom:4px; }
+    .flow-box .label { font-size:.85rem; font-weight:bold; color:#2b6cb0; }
+    .flow-box .sub   { font-size:.75rem; color:#718096; margin-top:2px; }
+    .flow-arrow      { font-size:1.5rem; color:#a0aec0; padding:0 4px; }
+    .flow-box.cloud  { background:#f0fff4; border-color:#9ae6b4; }
+    .flow-box.cloud .label { color:#276749; }
+
+    /* ── ステップ ── */
+    .steps { counter-reset:step; display:flex; flex-direction:column; gap:14px; }
+    .step  { display:flex; align-items:flex-start; gap:16px;
+             background:#ebf8ff; border-radius:10px; padding:14px 18px; }
+    .step::before { counter-increment:step; content:counter(step);
+                    min-width:34px; height:34px; background:#2b6cb0; color:#fff;
+                    border-radius:50%; display:flex; align-items:center; justify-content:center;
+                    font-weight:bold; font-size:.95rem; flex-shrink:0; }
+    .step-body strong { display:block; margin-bottom:3px; color:#1a365d; }
+    .step-body p, .step-body ul { font-size:.91rem; color:#4a5568; }
+    .step-body ul { padding-left:1.2em; }
+
+    /* ── ボタン ── */
+    .btn-group  { display:flex; flex-wrap:wrap; gap:12px; margin-top:20px; }
+    .btn        { display:inline-flex; align-items:center; gap:8px; padding:14px 26px;
+                  border-radius:8px; font-size:1rem; font-weight:bold; text-decoration:none;
+                  transition:transform .15s,box-shadow .15s; box-shadow:0 3px 8px rgba(0,0,0,.15); }
+    .btn:hover  { transform:translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,.2); }
+    .btn-app    { background:#2b6cb0; color:#fff; }
+    .btn-colab  { background:#f9ab00; color:#1a1a1a; }
+    .btn-icon   { font-size:1.25rem; }
+
+    /* ── パスワード ── */
+    .pw-box     { background:#fffbeb; border:2px dashed #f6ad55; border-radius:10px;
+                  padding:20px 24px; margin-top:16px; text-align:center; }
+    .pw-label   { font-size:.85rem; color:#744210; margin-bottom:6px; }
+    .pw-value   { font-size:2rem; font-weight:bold; letter-spacing:.25em;
+                  color:#c05621; font-family:"Courier New",monospace; }
+    .pw-note    { font-size:.8rem; color:#975a16; margin-top:6px; }
+
+    /* ── テーブル ── */
+    table  { width:100%; border-collapse:collapse; margin-top:12px; font-size:.91rem; }
+    th     { background:#2b6cb0; color:#fff; padding:10px 14px; text-align:left; }
+    td     { padding:10px 14px; border-bottom:1px solid #e2e8f0; vertical-align:top; }
+    tr:last-child td { border-bottom:none; }
+    tr:nth-child(even) td { background:#f7fafc; }
+
+    /* ── エンジン比較カード ── */
+    .engine-cards { display:flex; gap:16px; flex-wrap:wrap; margin-top:16px; }
+    .engine-card  { flex:1; min-width:220px; border-radius:12px; padding:20px;
+                    border:2px solid; }
+    .engine-card.groq { background:#f0f9ff; border-color:#63b3ed; }
+    .engine-card.aai  { background:#f0fff4; border-color:#68d391; }
+    .engine-card.colab{ background:#fffff0; border-color:#f6e05e; }
+    .engine-card h4   { font-size:1rem; margin-bottom:10px; }
+    .engine-card ul   { font-size:.87rem; color:#4a5568; padding-left:1.2em; }
+    .engine-card ul li { margin-bottom:4px; }
+    .tag { display:inline-block; font-size:.72rem; font-weight:bold;
+           padding:2px 8px; border-radius:99px; margin-left:6px; vertical-align:middle; }
+    .tag-free  { background:#48bb78; color:#fff; }
+    .tag-rec   { background:#ed8936; color:#fff; }
+
+    /* ── ノート ── */
+    .note  { display:flex; gap:10px; background:#fff5f5; border-left:4px solid #fc8181;
+             border-radius:0 8px 8px 0; padding:13px 16px; margin-top:14px;
+             font-size:.9rem; color:#742a2a; }
+    .tip   { display:flex; gap:10px; background:#f0fff4; border-left:4px solid #48bb78;
+             border-radius:0 8px 8px 0; padding:13px 16px; margin-top:14px;
+             font-size:.9rem; color:#22543d; }
+    .note-icon,.tip-icon { font-size:1.2rem; flex-shrink:0; }
+    code   { background:#edf2f7; border-radius:4px; padding:2px 7px;
+             font-family:"Courier New",monospace; font-size:.9em; }
+    .badge { display:inline-block; background:#48bb78; color:#fff;
+             font-size:.75rem; font-weight:bold; padding:2px 8px;
+             border-radius:99px; margin-left:6px; vertical-align:middle; }
+    footer { text-align:center; padding:24px; font-size:.82rem; color:#718096; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="icon">🐷</div>
+  <h1>万世ぶーちゃん 取扱説明書</h1>
+  <p>AI議事録・文字起こし校正システム　ver. 2.6</p>
+</header>
+
+<div class="container">
+
+  <!-- ── クイックアクセス ── -->
+  <section>
+    <h2>🚀 アプリを開く <span class="badge">常時稼働</span></h2>
+    <div class="btn-group">
+      <a class="btn btn-app"
+         href="https://manseibuuchan-app-d3rfcc9r2uefei5ndhv58t.streamlit.app/"
+         target="_blank">
+        <span class="btn-icon">📝</span> 万世ぶーちゃんを開く
+      </a>
+    </div>
+    <div class="tip" style="margin-top:18px;">
+      <span class="tip-icon">✅</span>
+      <span>議事録作成・音声文字起こしはすべて <strong>万世ぶーちゃんを開く</strong> だけで使えます（24時間常時稼働・Colab起動不要）。</span>
+    </div>
+  </section>
+
+  <!-- ── ログイン ── -->
+  <section>
+    <h2>🔐 ログイン方法</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-body">
+          <strong>「万世ぶーちゃんを開く」ボタンをクリック</strong>
+          <p>ログイン画面が表示されます。</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <strong>「🔐 Google アカウントでログイン」をクリック</strong>
+          <p>Googleアカウントでそのままログインできます（パスワード不要）。</p>
+        </div>
+      </div>
+    </div>
+    <div class="tip" style="margin-top:16px;">
+      <span class="tip-icon">💡</span>
+      <span>Google認証が使えない環境では、下記の月次パスワードでもログインできます。</span>
+    </div>
+    <div class="pw-box" style="margin-top:16px;">
+      <div class="pw-label">2026年3月のパスワード（Google認証が使えない場合）</div>
+      <div class="pw-value">Q896DQFX</div>
+      <div class="pw-note">※ パスワードは毎月1日に自動で変わります。翌月分はシステム管理者（田原）にお問い合わせください。</div>
+    </div>
+  </section>
+
+  <!-- ── 使い分け ── -->
+  <section>
+    <h2>🗺 使い方の流れ</h2>
+
+    <h3>📄 テキストデータがある場合（最も簡単）</h3>
+    <div class="flow">
+      <div class="flow-box">
+        <span class="emoji">📄</span>
+        <div class="label">文字起こし済みテキスト</div>
+        <div class="sub">メモ・テキストファイルなど</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box cloud" style="flex:2;">
+        <span class="emoji">📝</span>
+        <div class="label">「テキストから作成」タブに貼り付けて議事録生成</div>
+        <div class="sub">Colab 起動不要・すぐ使える</div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:20px;">🎤 音声ファイルがある場合</h3>
+    <div class="flow">
+      <div class="flow-box">
+        <span class="emoji">🎤</span>
+        <div class="label">音声ファイル</div>
+        <div class="sub">m4a / mp3 / wav</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">
+        <span class="emoji">⚙️</span>
+        <div class="label">「音声から作成」タブで<br>エンジンを選んでアップロード</div>
+        <div class="sub">自動で文字起こし＋議事録生成</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box cloud">
+        <span class="emoji">📥</span>
+        <div class="label">議事録・文字起こし<br>HTMLをダウンロード</div>
+        <div class="sub">完成！</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 音声エンジン比較 ── -->
+  <section>
+    <h2>🔧 音声文字起こしエンジンの選び方</h2>
+    <p style="font-size:.91rem;margin-bottom:4px;">「音声から作成」タブで3種類のエンジンから選べます。</p>
+
+    <div class="engine-cards">
+
+      <div class="engine-card groq">
+        <h4>🤖 Groq Whisper<span class="tag tag-free">完全無料</span></h4>
+        <ul>
+          <li>✅ <strong>高速</strong>（30秒〜2分）</li>
+          <li>✅ 完全無料・制限なし</li>
+          <li>✅ 1人の録音・講演・インタビューに最適</li>
+          <li>❌ 話者識別なし（誰が話したかわからない）</li>
+        </ul>
+      </div>
+
+      <div class="engine-card aai">
+        <h4>🎯 AssemblyAI<span class="tag tag-rec">会議録音おすすめ</span></h4>
+        <ul>
+          <li>✅ <strong>話者識別あり</strong>（誰が話したか自動判定）</li>
+          <li>✅ 100時間まで無料</li>
+          <li>✅ <strong>複数人の会議録音に最適</strong></li>
+          <li>⏱ やや時間がかかる（1〜3分）</li>
+        </ul>
+      </div>
+
+      <div class="engine-card colab">
+        <h4>🐷 Colab ローカル</h4>
+        <ul>
+          <li>✅ 話者識別あり（pyannote使用）</li>
+          <li>✅ データがクラウドに送られない</li>
+          <li>❌ Colabの起動が必要（約30秒）</li>
+          <li>❌ 処理時間が長い</li>
+        </ul>
+      </div>
+
+    </div>
+
+    <table style="margin-top:20px;">
+      <thead><tr><th>場面</th><th>おすすめエンジン</th></tr></thead>
+      <tbody>
+        <tr><td>👤 1人の録音・講演・インタビュー</td><td>🤖 <strong>Groq Whisper</strong>（速くて無料）</td></tr>
+        <tr><td>👥 複数人の会議（誰が話したか残したい）</td><td>🎯 <strong>AssemblyAI</strong>（話者識別あり）</td></tr>
+        <tr><td>🔒 データを外部に送りたくない</td><td>🐷 <strong>Colab ローカル</strong></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── 音声→議事録 手順 ── -->
+  <section>
+    <h2>🎤 音声ファイルから議事録を作る手順</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-body">
+          <strong>「万世ぶーちゃんを開く」→「🎤 音声から作成」タブをクリック</strong>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <strong>文字起こしエンジンを選ぶ</strong>
+          <ul>
+            <li>会議録音 → 🎯 AssemblyAI（話者識別あり）</li>
+            <li>1人の録音・速記 → 🤖 Groq Whisper</li>
+          </ul>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <strong>音声ファイルをアップロードして必要事項を入力</strong>
+          <p>会議日時・タイトル・参加者などを入力します。</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <strong>「▶ 文字起こし＋議事録を作成」ボタンをクリック</strong>
+          <p>自動で文字起こし→議事録生成まで一括処理されます。</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <strong>議事録・文字起こしデータをダウンロード</strong>
+          <p>HTML形式でダウンロードできます。印刷にも対応しています。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── テキストのみ手順 ── -->
+  <section>
+    <h2>📄 テキストから議事録を作る手順</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-body">
+          <strong>「万世ぶーちゃんを開く」→「📝 テキストから作成」タブをクリック</strong>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <strong>テキスト欄に文字起こしを貼り付ける</strong>
+          <p>会議の文字起こしテキストを貼り付けます。</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <strong>参加者・メモを入力して議事録生成</strong>
+          <ul>
+            <li>参加者の名前と所属を入力</li>
+            <li>出力スタイルは「議事録＋文字起こしデータ」がおすすめ</li>
+            <li>「🐷 議事録を作る」ボタンをクリック</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 機能説明 ── -->
+  <section>
+    <h2>⚙️ 機能一覧</h2>
+    <table>
+      <thead><tr><th>機能</th><th>内容</th><th>備考</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>📋 <strong>議事録生成</strong></td>
+          <td>文字起こしテキストからAIが議事録を自動作成</td>
+          <td>常時稼働</td>
+        </tr>
+        <tr>
+          <td>📄 <strong>文字起こしデータ出力</strong></td>
+          <td>議事録＋整形済み文字起こしをセットで出力</td>
+          <td>常時稼働</td>
+        </tr>
+        <tr>
+          <td>🤖 <strong>Groq 音声文字起こし</strong></td>
+          <td>音声→テキスト変換（高速・無料・話者識別なし）</td>
+          <td>Groq APIキー必要（無料）</td>
+        </tr>
+        <tr>
+          <td>🎯 <strong>AssemblyAI 音声文字起こし</strong></td>
+          <td>音声→テキスト変換（話者識別あり・誰が話したか判別）</td>
+          <td>AssemblyAI APIキー必要（100時間無料）</td>
+        </tr>
+        <tr>
+          <td>🐷 <strong>Colab ローカル文字起こし</strong></td>
+          <td>Colabで話者識別付き文字起こし（データをクラウドに送らない）</td>
+          <td>Colab起動が必要</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── トラブル ── -->
+  <section>
+    <h2>🔧 よくあるトラブル</h2>
+
+    <h3>❌ アプリが「This app has gone to sleep」と表示される</h3>
+    <p style="font-size:.92rem;">「Wake up this app」ボタンをクリックしてください（1〜2分で復帰します）。</p>
+
+    <h3>❌ パスワードが違うと言われる</h3>
+    <p style="font-size:.92rem;">月が変わるとパスワードが変わります。上記「今月のパスワード」を確認するか、Googleアカウントでログインしてください。</p>
+
+    <h3>❌ 音声ファイルのアップロードに失敗する</h3>
+    <p style="font-size:.92rem;">対応形式：m4a / mp3 / wav / mp4 / ogg / flac。ファイルサイズが大きい場合は時間がかかることがあります。</p>
+
+    <h3>❌ AssemblyAI でエラーが出る</h3>
+    <div class="note">
+      <span class="note-icon">⚠️</span>
+      <span>AssemblyAI の無料枠（100時間）を超えた可能性があります。Groq Whisper に切り替えるか、システム管理者（田原）にご連絡ください。</span>
+    </div>
+  </section>
+
+  <!-- ── システム情報 ── -->
+  <section>
+    <h2>ℹ️ システム情報</h2>
+    <table>
+      <tbody>
+        <tr><td><strong>バージョン</strong></td><td>v2.6（2026年3月）</td></tr>
+        <tr><td><strong>AIモデル</strong></td><td>Claude Haiku 4.5</td></tr>
+        <tr><td><strong>アプリURL</strong></td><td><code>https://manseibuuchan-app-d3rfcc9r2uefei5ndhv58t.streamlit.app/</code></td></tr>
+        <tr><td><strong>音声文字起こし</strong></td><td>Groq Whisper（無料）/ AssemblyAI（話者識別・100時間無料）/ Colab ローカル</td></tr>
+        <tr><td><strong>認証方式</strong></td><td>Google アカウント認証 / 月次パスワード（フォールバック）</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+</div>
+<footer>万世ぶーちゃん v2.6 &nbsp;|&nbsp; 取扱説明書 &nbsp;|&nbsp; 最終更新：2026年3月</footer>
+</body>
+</html>
