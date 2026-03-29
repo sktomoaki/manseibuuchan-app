@@ -286,6 +286,62 @@ def call_claude_legal(raw_text, q_title):
     return resp.content[0].text
 
 # ================================================================
+# ZIP一括ダウンロード
+# ================================================================
+def create_zip_bundle(file_base, ts, minutes_html, legal_html, raw_text):
+    """すべての出力ファイルをZIPにまとめる。フォルダ名に日時を含む。"""
+    import io, zipfile
+    folder = ts + "_" + (file_base or "議事録")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        if minutes_html:
+            zf.writestr(folder + "/" + file_base + "_議事録.html",
+                        minutes_html.encode("utf-8"))
+        if legal_html:
+            zf.writestr(folder + "/" + file_base + "_文字起こしデータ.html",
+                        legal_html.encode("utf-8"))
+        if raw_text:
+            zf.writestr(folder + "/" + file_base + "_文字起こし.txt",
+                        raw_text.encode("utf-8"))
+    buf.seek(0)
+    return buf.getvalue(), folder + ".zip"
+
+def show_download_section(file_base, ts, minutes_html, legal_html, raw_text, key_prefix=""):
+    """ZIPボタン（大）＋個別ボタン（小）をまとめて表示する。"""
+    zip_bytes, zip_name = create_zip_bundle(file_base, ts, minutes_html, legal_html, raw_text)
+    st.markdown("---")
+    st.markdown("#### 📦 ダウンロード")
+    st.download_button(
+        "📦 すべてまとめてダウンロード（ZIP）",
+        data=zip_bytes,
+        file_name=zip_name,
+        mime="application/zip",
+        type="primary",
+        use_container_width=True,
+        key=key_prefix + "_zip",
+    )
+    st.caption("↑ ZIPの中に議事録・文字起こしデータ・テキストがすべて入っています")
+    with st.expander("個別にダウンロードする場合はこちら"):
+        if minutes_html:
+            st.download_button("📄 議事録 HTML",
+                data=minutes_html.encode("utf-8"),
+                file_name=file_base + "_議事録_" + ts + ".html",
+                mime="text/html", use_container_width=True,
+                key=key_prefix + "_min")
+        if legal_html:
+            st.download_button("📄 文字起こしデータ HTML",
+                data=legal_html.encode("utf-8"),
+                file_name=file_base + "_文字起こしデータ_" + ts + ".html",
+                mime="text/html", use_container_width=True,
+                key=key_prefix + "_leg")
+        if raw_text:
+            st.download_button("📝 文字起こし TXT",
+                data=raw_text.encode("utf-8"),
+                file_name=file_base + "_文字起こし_" + ts + ".txt",
+                mime="text/plain", use_container_width=True,
+                key=key_prefix + "_txt")
+
+# ================================================================
 # 完了通知音
 # ================================================================
 def play_completion_sound():
@@ -393,29 +449,16 @@ with tab1:
                     from datetime import datetime
                     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                     file_base = q_title.strip().replace(" ", "_") or "議事録"
-
-                    st.markdown("#### 📄 議事録")
-                    st.download_button("📄 議事録 HTML をダウンロード",
-                        data=minutes_html.encode("utf-8"),
-                        file_name=f"{file_base}_{ts}.html",
-                        mime="text/html", use_container_width=True)
+                    legal_html = ""
 
                     if mode == "議事録＋文字起こしデータ":
                         with st.spinner("文字起こしデータを整理中..."):
                             try:
                                 legal_html = call_claude_legal(raw_text, q_title)
-                                st.markdown("#### 📄 文字起こしデータ")
-                                st.download_button("📄 文字起こしデータ HTML をダウンロード",
-                                    data=legal_html.encode("utf-8"),
-                                    file_name=f"{file_base}_文字起こし_{ts}.html",
-                                    mime="text/html", use_container_width=True)
                             except Exception as e:
                                 st.warning(f"文字起こしデータ整理エラー: {e}")
 
-                    st.download_button("📝 文字起こし TXT をダウンロード",
-                        data=raw_text.encode("utf-8"),
-                        file_name=f"{file_base}_文字起こし_{ts}.txt",
-                        mime="text/plain", use_container_width=True)
+                    show_download_section(file_base, ts, minutes_html, legal_html, raw_text, key_prefix="tab1")
                     play_completion_sound()
 
                 except Exception as e:
@@ -499,22 +542,10 @@ with tab2:
                                 minutes_html_g = call_claude_minutes(
                                     raw_text_g, q_date_g, q_title_g, q_place_g,
                                     participants_g, emphasis_g, decisions_g, pending_g)
-                                st.markdown("#### 📄 議事録")
-                                st.download_button("📄 議事録 HTML をダウンロード",
-                                    data=minutes_html_g.encode("utf-8"),
-                                    file_name=f"{fb_g}_{ts_g}.html",
-                                    mime="text/html", use_container_width=True, key="dl_min_g")
+                                legal_html_g = ""
                                 if mode_g == "議事録＋文字起こしデータ":
                                     legal_html_g = call_claude_legal(raw_text_g, q_title_g)
-                                    st.markdown("#### 📄 文字起こしデータ")
-                                    st.download_button("📄 文字起こしデータ HTML をダウンロード",
-                                        data=legal_html_g.encode("utf-8"),
-                                        file_name=f"{fb_g}_文字起こし_{ts_g}.html",
-                                        mime="text/html", use_container_width=True, key="dl_leg_g")
-                                st.download_button("📝 文字起こし TXT をダウンロード",
-                                    data=raw_text_g.encode("utf-8"),
-                                    file_name=f"{fb_g}_文字起こし_{ts_g}.txt",
-                                    mime="text/plain", use_container_width=True, key="dl_txt_g")
+                                show_download_section(fb_g, ts_g, minutes_html_g, legal_html_g, raw_text_g, key_prefix="groq")
                                 play_completion_sound()
                             except Exception as e:
                                 st.error(f"議事録生成エラー: {e}")
@@ -580,22 +611,10 @@ with tab2:
                                 minutes_html_a = call_claude_minutes(
                                     raw_text_a, q_date_a, q_title_a, q_place_a,
                                     participants_a, emphasis_a, decisions_a, pending_a)
-                                st.markdown("#### 📄 議事録")
-                                st.download_button("📄 議事録 HTML をダウンロード",
-                                    data=minutes_html_a.encode("utf-8"),
-                                    file_name=f"{fb_a}_{ts_a}.html",
-                                    mime="text/html", use_container_width=True, key="dl_min_a")
+                                legal_html_a = ""
                                 if mode_a == "議事録＋文字起こしデータ":
                                     legal_html_a = call_claude_legal(raw_text_a, q_title_a)
-                                    st.markdown("#### 📄 文字起こしデータ")
-                                    st.download_button("📄 文字起こしデータ HTML をダウンロード",
-                                        data=legal_html_a.encode("utf-8"),
-                                        file_name=f"{fb_a}_文字起こし_{ts_a}.html",
-                                        mime="text/html", use_container_width=True, key="dl_leg_a")
-                                st.download_button("📝 文字起こし TXT をダウンロード",
-                                    data=raw_text_a.encode("utf-8"),
-                                    file_name=f"{fb_a}_文字起こし_{ts_a}.txt",
-                                    mime="text/plain", use_container_width=True, key="dl_txt_a")
+                                show_download_section(fb_a, ts_a, minutes_html_a, legal_html_a, raw_text_a, key_prefix="aai")
                                 play_completion_sound()
                             except Exception as e:
                                 st.error(f"議事録生成エラー: {e}")
@@ -801,21 +820,11 @@ with tab2:
                 fb_c = st.session_state.file_base
                 from datetime import datetime as _dt
                 ts_c = _dt.now().strftime("%Y%m%d_%H%M%S")
-                st.divider()
-                if st.session_state.minutes_html:
-                    st.markdown("#### 📄 議事録")
-                    st.download_button("📄 議事録 HTML をダウンロード",
-                        data=st.session_state.minutes_html.encode("utf-8"),
-                        file_name=f"{fb_c}_議事録_{ts_c}.html", mime="text/html", use_container_width=True)
-                if st.session_state.legal_html:
-                    st.markdown("#### 📄 文字起こしデータ")
-                    st.download_button("📄 文字起こしデータ HTML をダウンロード",
-                        data=st.session_state.legal_html.encode("utf-8"),
-                        file_name=f"{fb_c}_文字起こし_{ts_c}.html", mime="text/html", use_container_width=True)
-                if st.session_state.raw_text:
-                    st.download_button("📝 文字起こし TXT をダウンロード",
-                        data=st.session_state.raw_text.encode("utf-8"),
-                        file_name=f"{fb_c}_文字起こし_{ts_c}.txt", mime="text/plain", use_container_width=True)
+                show_download_section(fb_c, ts_c,
+                    st.session_state.minutes_html,
+                    st.session_state.legal_html,
+                    st.session_state.raw_text,
+                    key_prefix="colab")
                 st.divider()
                 col3c, col4c = st.columns(2)
                 with col3c:
