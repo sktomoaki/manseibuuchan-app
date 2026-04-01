@@ -7,11 +7,21 @@ import streamlit.components.v1 as components
 # ================================================================
 # 環境変数
 # ================================================================
-ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
-GROQ_API_KEY       = os.environ.get("GROQ_API_KEY", "")
-ASSEMBLYAI_API_KEY = os.environ.get("ASSEMBLYAI_API_KEY", "")
-HF_TOKEN           = os.environ.get("HF_TOKEN", "")
-DRIVE_BASE         = os.environ.get("DRIVE_BASE", "/tmp/Claude")
+def _get_secret(key: str) -> str:
+    """st.secrets → os.environ の順で取得（Streamlit Cloud・ローカル両対応）"""
+    try:
+        val = st.secrets.get(key, "")
+        if val:
+            return str(val).strip()
+    except Exception:
+        pass
+    return os.environ.get(key, "").strip()
+
+ANTHROPIC_API_KEY  = _get_secret("ANTHROPIC_API_KEY")
+GROQ_API_KEY       = _get_secret("GROQ_API_KEY")
+ASSEMBLYAI_API_KEY = _get_secret("ASSEMBLYAI_API_KEY")
+HF_TOKEN           = _get_secret("HF_TOKEN")
+DRIVE_BASE         = _get_secret("DRIVE_BASE") or "/tmp/Claude"
 CLAUDE_MODEL       = "claude-haiku-4-5-20251001"
 
 import pathlib
@@ -22,7 +32,7 @@ WAV_FILE = "/tmp/meeting.wav"
 # ================================================================
 # ページ設定
 # ================================================================
-st.set_page_config(page_title="万世ぶーちゃん v2.6", page_icon="🐷", layout="centered")
+st.set_page_config(page_title="万世ぶーちゃん v2.7", page_icon="🐷", layout="centered")
 
 # ================================================================
 # 月次パスワード生成（フォールバック用）
@@ -238,7 +248,10 @@ def transcribe_assemblyai(audio_path: str, speakers_expected: int = 2) -> str:
 def call_claude_minutes(raw_text, q_date, q_title, q_place,
                          participants, emphasis, decisions, pending):
     import anthropic as _ant
-    client = _ant.Anthropic(api_key=ANTHROPIC_API_KEY)
+    api_key = _get_secret("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise ValueError("ANTHROPIC_API_KEY が未設定です。Streamlit Cloud の Secrets に設定してください。")
+    client = _ant.Anthropic(api_key=api_key)
     prompt = (
         "以下の会議の文字起こしテキストをもとに、HTMLフォーマットの議事録を作成してください。\n\n"
         "【会議情報】\n"
@@ -265,7 +278,10 @@ def call_claude_minutes(raw_text, q_date, q_title, q_place,
 
 def call_claude_legal(raw_text, q_title):
     import anthropic as _ant
-    client = _ant.Anthropic(api_key=ANTHROPIC_API_KEY)
+    api_key = _get_secret("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise ValueError("ANTHROPIC_API_KEY が未設定です。Streamlit Cloud の Secrets に設定してください。")
+    client = _ant.Anthropic(api_key=api_key)
     prompt = (
         "以下の会議文字起こしを、読みやすく整形した「文字起こしデータHTML」を作成してください。\n\n"
         "件名: " + q_title + "\n\n"
