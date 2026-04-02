@@ -674,12 +674,29 @@ with tab1:
                             err_str = str(e)
                             if "429" in err_str or "rate_limit" in err_str.lower():
                                 import re as _re
-                                wait = _re.search(r"try again in ([\d]+m[\d.]+s|[\d.]+s)", err_str)
-                                wait_msg = wait.group(1) if wait else "しばらく"
-                                st.error("⏳ Groqの無料枠（2時間/時）を使い切りました。" + wait_msg + "後に再試行するか、AssemblyAI に切り替えてください（話者識別もできます）。")
+                                from datetime import datetime, timedelta
+                                # 待ち時間をパース（例: "2m27.5s" or "150.3s"）
+                                wait_match = _re.search(r"try again in (?:(\d+)m)?([\d.]+)s", err_str)
+                                wait_sec = 0
+                                if wait_match:
+                                    wait_sec += int(wait_match.group(1) or 0) * 60
+                                    wait_sec += float(wait_match.group(2) or 0)
+                                # 再試行可能時刻を計算
+                                retry_time = datetime.now() + timedelta(seconds=wait_sec + 10)
+                                retry_str = retry_time.strftime("%-H時%-M分") if wait_sec > 0 else "しばらく経ったら"
+                                wait_min = int(wait_sec // 60)
+                                wait_s   = int(wait_sec % 60)
+                                wait_disp = f"{wait_min}分{wait_s}秒" if wait_min > 0 else f"{wait_s}秒"
+                                st.error(
+                                    "⏰ Groqの無料枠（1時間あたり2時間分の音声）を使い切りました。"
+                                    + (("あと " + wait_disp + "（" + retry_str + "ごろ）に再試行できます。 ") if wait_sec > 0 else "")
+                                    + "それまでの間は AssemblyAI に切り替えると今すぐ使えます（話者識別もできます）。"
+                                )
+                                st.info("💡 エンジン選択で「🎯 AssemblyAI」を選んでください。月100時間まで無料・話者識別あり。")
+                            elif "413" in err_str or "too large" in err_str.lower():
+                                st.error("📦 ファイルが大きすぎます。ページを更新して再試行してください。")
                             else:
-                                st.error(f"文字起こしエラー: {e}")
-                            raw_text_g = ""
+                                st.error("⚠️ 文字起こし中にエラーが発生しました。詳細: " + str(e))
 
                     if raw_text_g and ANTHROPIC_API_KEY:
                         with st.spinner("🐷 Claude が議事録を生成中..."):
