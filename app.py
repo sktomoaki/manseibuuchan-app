@@ -100,31 +100,41 @@ check_auth()
 # ================================================================
 with st.sidebar:
     st.markdown("---")
-    with st.expander("📊 利用ログ"):
-        _log_path = os.path.join(DRIVE_BASE, "usage_log.csv")
-        if os.path.exists(_log_path):
-            import csv as _csv_mod
-            with open(_log_path, encoding="utf-8-sig", newline="") as _lf:
-                _log_csv_raw = _lf.read()
-            _log_rows = list(_csv_mod.DictReader(_log_csv_raw.splitlines()))
-            st.caption(f"📝 累計 {len(_log_rows)} 件")
-            for _r in reversed(_log_rows[-20:]):
+    st.markdown("#### 📊 利用ログ")
+    _log_path = os.path.join(DRIVE_BASE, "usage_log.csv")
+    if os.path.exists(_log_path):
+        import csv as _csv_mod
+        from datetime import datetime as _dt_log
+        with open(_log_path, encoding="utf-8-sig", newline="") as _lf:
+            _log_csv_raw = _lf.read()
+        _log_rows = list(_csv_mod.DictReader(_log_csv_raw.splitlines()))
+        _total_tok = sum(int(_r.get("total_tokens", 0) or 0) for _r in _log_rows)
+        st.caption(f"累計 **{len(_log_rows)} 件** ／ {_total_tok:,} トークン")
+        # ── 常時表示：ダウンロードボタン ──
+        from datetime import datetime as _dtdl
+        _dl_fname = "usage_log_" + _dtdl.now().strftime("%Y%m%d") + ".csv"
+        st.download_button(
+            "📥 利用ログCSVをダウンロード",
+            data=_log_csv_raw.encode("utf-8-sig"),
+            file_name=_dl_fname,
+            mime="text/csv",
+            use_container_width=True,
+            key="dl_usage_log",
+        )
+        st.caption("⚠️ サーバー再起動でログは消えます。定期的にダウンロードしてください。")
+        # ── 詳細は折りたたみ ──
+        with st.expander("最近の利用を見る"):
+            for _r in reversed(_log_rows[-15:]):
                 _tok = _r.get("total_tokens", "-")
                 _eng = _r.get("engine", "-")
                 _usr = _r.get("user_name", "-")
-                _ttl = _r.get("meeting_title", "")[:10]
-                _ts  = _r.get("timestamp", "")[:16]
-                st.caption(f"🕐 {_ts}｜{_usr}｜{_eng[:4]}｜{_ttl}｜{_tok}tok")
-            st.download_button(
-                "📥 ログCSVをダウンロード",
-                data=_log_csv_raw.encode("utf-8-sig"),
-                file_name="usage_log.csv",
-                mime="text/csv",
-                use_container_width=True,
-                key="dl_usage_log",
-            )
-        else:
-            st.caption("📭 まだ利用ログはありません")
+                _ttl = (_r.get("meeting_title", "") or "")[:12]
+                _ts  = (_r.get("timestamp",     "") or "")[:16]
+                _ok  = "✅" if str(_r.get("success","")).lower() in ("true","1") else "❌"
+                st.caption(f"{_ok} {_ts}  \n👤{_usr} | {_eng[:8]}  \n📌{_ttl} | {_tok}tok")
+    else:
+        st.caption("📭 まだ利用ログはありません")
+        st.caption("議事録を作成すると自動で記録されます。")
 
 # ================================================================
 # 起動時RAM確認・警告
