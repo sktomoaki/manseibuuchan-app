@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>万世ぶーちゃん 取扱説明書</title>
+  <title>万世ブーちゃん 取扱説明書 v2.9</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: "Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",sans-serif;
@@ -50,7 +50,6 @@
                   transition:transform .15s,box-shadow .15s; box-shadow:0 3px 8px rgba(0,0,0,.15); }
     .btn:hover  { transform:translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,.2); }
     .btn-app    { background:#2b6cb0; color:#fff; }
-    .btn-colab  { background:#f9ab00; color:#1a1a1a; }
     .btn-icon   { font-size:1.25rem; }
 
     /* ── パスワード ── */
@@ -74,7 +73,6 @@
                     border:2px solid; }
     .engine-card.groq { background:#f0f9ff; border-color:#63b3ed; }
     .engine-card.aai  { background:#f0fff4; border-color:#68d391; }
-    .engine-card.colab{ background:#fffff0; border-color:#f6e05e; }
     .engine-card h4   { font-size:1rem; margin-bottom:10px; }
     .engine-card ul   { font-size:.87rem; color:#4a5568; padding-left:1.2em; }
     .engine-card ul li { margin-bottom:4px; }
@@ -103,8 +101,8 @@
 
 <header>
   <div class="icon">🐷</div>
-  <h1>万世ぶーちゃん 取扱説明書</h1>
-  <p>AI議事録・文字起こし校正システム　ver. 2.6</p>
+  <h1>万世ブーちゃんの音声ファイルから議事録作成だブー</h1>
+  <p>取扱説明書　ver. 2.9</p>
 </header>
 
 <div class="container">
@@ -116,12 +114,12 @@
       <a class="btn btn-app"
          href="https://manseibuuchan-app-d3rfcc9r2uefei5ndhv58t.streamlit.app/"
          target="_blank">
-        <span class="btn-icon">📝</span> 万世ぶーちゃんを開く
+        <span class="btn-icon">🐷</span> 万世ブーちゃんを開く
       </a>
     </div>
     <div class="tip" style="margin-top:18px;">
       <span class="tip-icon">✅</span>
-      <span>議事録作成・音声文字起こしはすべて <strong>万世ぶーちゃんを開く</strong> だけで使えます（24時間常時稼働・Colab起動不要）。</span>
+      <span>音声アップロード→文字起こし→議事録生成まで <strong>万世ブーちゃんを開く</strong> だけで完結（24時間常時稼働）。</span>
     </div>
   </section>
 
@@ -131,7 +129,7 @@
     <div class="steps">
       <div class="step">
         <div class="step-body">
-          <strong>「万世ぶーちゃんを開く」ボタンをクリック</strong>
+          <strong>「万世ブーちゃんを開く」ボタンをクリック</strong>
           <p>ログイン画面が表示されます。</p>
         </div>
       </div>
@@ -144,12 +142,7 @@
     </div>
     <div class="tip" style="margin-top:16px;">
       <span class="tip-icon">💡</span>
-      <span>Google認証が使えない環境では、下記の月次パスワードでもログインできます。</span>
-    </div>
-    <div class="pw-box" style="margin-top:16px;">
-      <div class="pw-label">月次パスワード（Google認証が使えない場合）</div>
-      <div class="pw-value" style="font-size:1rem;letter-spacing:0;">管理者（田原）にお問い合わせください</div>
-      <div class="pw-note">※ パスワードは毎月1日に自動で変わります。セキュリティのためここには掲載していません。</div>
+      <span>Google認証が使えない環境では、月次パスワードでもログインできます。管理者（田原）にお問い合わせください。</span>
     </div>
   </section>
 
@@ -157,7 +150,28 @@
   <section>
     <h2>🗺 使い方の流れ</h2>
 
-    <h3>📄 テキストデータがある場合（最も簡単）</h3>
+    <h3>🎤 音声ファイルから議事録を作る（メイン機能）</h3>
+    <div class="flow">
+      <div class="flow-box">
+        <span class="emoji">🎤</span>
+        <div class="label">音声ファイル</div>
+        <div class="sub">m4a / mp3 / wav など<br>長時間でも自動分割対応</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box">
+        <span class="emoji">⚙️</span>
+        <div class="label">「🎤 音声から作成」タブで<br>エンジンを選んでアップロード</div>
+        <div class="sub">自動で文字起こし</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box cloud">
+        <span class="emoji">📥</span>
+        <div class="label">議事録・文字起こし<br>HTMLをダウンロード</div>
+        <div class="sub">完成！</div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:20px;">📄 テキストデータがある場合</h3>
     <div class="flow">
       <div class="flow-box">
         <span class="emoji">📄</span>
@@ -167,29 +181,8 @@
       <div class="flow-arrow">→</div>
       <div class="flow-box cloud" style="flex:2;">
         <span class="emoji">📝</span>
-        <div class="label">「テキストから作成」タブに貼り付けて議事録生成</div>
-        <div class="sub">Colab 起動不要・すぐ使える</div>
-      </div>
-    </div>
-
-    <h3 style="margin-top:20px;">🎤 音声ファイルがある場合</h3>
-    <div class="flow">
-      <div class="flow-box">
-        <span class="emoji">🎤</span>
-        <div class="label">音声ファイル</div>
-        <div class="sub">m4a / mp3 / wav</div>
-      </div>
-      <div class="flow-arrow">→</div>
-      <div class="flow-box">
-        <span class="emoji">⚙️</span>
-        <div class="label">「音声から作成」タブで<br>エンジンを選んでアップロード</div>
-        <div class="sub">自動で文字起こし＋議事録生成</div>
-      </div>
-      <div class="flow-arrow">→</div>
-      <div class="flow-box cloud">
-        <span class="emoji">📥</span>
-        <div class="label">議事録・文字起こし<br>HTMLをダウンロード</div>
-        <div class="sub">完成！</div>
+        <div class="label">「📝 テキストから作成」タブに貼り付けて議事録生成</div>
+        <div class="sub">すぐ使える</div>
       </div>
     </div>
   </section>
@@ -197,7 +190,7 @@
   <!-- ── 音声エンジン比較 ── -->
   <section>
     <h2>🔧 音声文字起こしエンジンの選び方</h2>
-    <p style="font-size:.91rem;margin-bottom:4px;">「音声から作成」タブで3種類のエンジンから選べます。</p>
+    <p style="font-size:.91rem;margin-bottom:4px;">「🎤 音声から作成」タブで2種類のエンジンから選べます。</p>
 
     <div class="engine-cards">
 
@@ -205,7 +198,8 @@
         <h4>🤖 Groq Whisper<span class="tag tag-free">完全無料</span></h4>
         <ul>
           <li>✅ <strong>高速</strong>（30秒〜2分）</li>
-          <li>✅ 完全無料・制限なし</li>
+          <li>✅ 完全無料</li>
+          <li>✅ 長時間ファイルも自動チャンク分割で対応</li>
           <li>✅ 1人の録音・講演・インタビューに最適</li>
           <li>❌ 話者識別なし（誰が話したかわからない）</li>
         </ul>
@@ -221,16 +215,6 @@
         </ul>
       </div>
 
-      <div class="engine-card colab">
-        <h4>🐷 Colab ローカル</h4>
-        <ul>
-          <li>✅ 話者識別あり（pyannote使用）</li>
-          <li>✅ データがクラウドに送られない</li>
-          <li>❌ Colabの起動が必要（約30秒）</li>
-          <li>❌ 処理時間が長い</li>
-        </ul>
-      </div>
-
     </div>
 
     <table style="margin-top:20px;">
@@ -238,9 +222,14 @@
       <tbody>
         <tr><td>👤 1人の録音・講演・インタビュー</td><td>🤖 <strong>Groq Whisper</strong>（速くて無料）</td></tr>
         <tr><td>👥 複数人の会議（誰が話したか残したい）</td><td>🎯 <strong>AssemblyAI</strong>（話者識別あり）</td></tr>
-        <tr><td>🔒 データを外部に送りたくない</td><td>🐷 <strong>Colab ローカル</strong></td></tr>
+        <tr><td>⏱ 2〜4時間の長時間録音</td><td>🤖 <strong>Groq Whisper</strong>（自動チャンク分割で対応）</td></tr>
       </tbody>
     </table>
+
+    <div class="tip" style="margin-top:16px;">
+      <span class="tip-icon">✨</span>
+      <span><strong>長時間音声も安心：</strong> 30分を超える音声は自動的に10分チャンクに分割して処理されます。進捗バーで何チャンク目かリアルタイム表示。</span>
+    </div>
   </section>
 
   <!-- ── 音声→議事録 手順 ── -->
@@ -249,28 +238,34 @@
     <div class="steps">
       <div class="step">
         <div class="step-body">
-          <strong>「万世ぶーちゃんを開く」→「🎤 音声から作成」タブをクリック</strong>
+          <strong>「万世ブーちゃんを開く」→「🎤 音声から作成」タブ（最初から開いています）</strong>
         </div>
       </div>
       <div class="step">
         <div class="step-body">
           <strong>文字起こしエンジンを選ぶ</strong>
           <ul>
-            <li>会議録音 → 🎯 AssemblyAI（話者識別あり）</li>
-            <li>1人の録音・速記 → 🤖 Groq Whisper</li>
+            <li>会議録音・複数人 → 🎯 AssemblyAI（話者識別あり）</li>
+            <li>1人の録音・速記・長時間 → 🤖 Groq Whisper</li>
           </ul>
         </div>
       </div>
       <div class="step">
         <div class="step-body">
-          <strong>音声ファイルをアップロードして必要事項を入力</strong>
-          <p>会議日時・タイトル・参加者などを入力します。</p>
+          <strong>音声ファイルをアップロード</strong>
+          <p>ファイルサイズ・音声の長さ・予想処理時間が自動表示されます。</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <strong>会議情報を入力</strong>
+          <p>会議日時・タイトル・参加者などを入力します（空欄でも生成できます）。</p>
         </div>
       </div>
       <div class="step">
         <div class="step-body">
           <strong>「▶ 文字起こし＋議事録を作成」ボタンをクリック</strong>
-          <p>自動で文字起こし→議事録生成まで一括処理されます。</p>
+          <p>自動で文字起こし→議事録生成まで一括処理されます。長時間ファイルはチャンクごとに進捗表示。</p>
         </div>
       </div>
       <div class="step">
@@ -288,7 +283,7 @@
     <div class="steps">
       <div class="step">
         <div class="step-body">
-          <strong>「万世ぶーちゃんを開く」→「📝 テキストから作成」タブをクリック</strong>
+          <strong>「万世ブーちゃんを開く」→「📝 テキストから作成」タブをクリック</strong>
         </div>
       </div>
       <div class="step">
@@ -328,7 +323,7 @@
         </tr>
         <tr>
           <td>🤖 <strong>Groq 音声文字起こし</strong></td>
-          <td>音声→テキスト変換（高速・無料・話者識別なし）</td>
+          <td>音声→テキスト変換（高速・無料・長時間自動チャンク分割）</td>
           <td>Groq APIキー必要（無料）</td>
         </tr>
         <tr>
@@ -337,9 +332,9 @@
           <td>AssemblyAI APIキー必要（100時間無料）</td>
         </tr>
         <tr>
-          <td>🐷 <strong>Colab ローカル文字起こし</strong></td>
-          <td>Colabで話者識別付き文字起こし（データをクラウドに送らない）</td>
-          <td>Colab起動が必要</td>
+          <td>🔀 <strong>長時間音声の自動分割</strong></td>
+          <td>30分超の音声を10分チャンクに自動分割・進捗表示・中間バックアップ</td>
+          <td>v2.8以降</td>
         </tr>
       </tbody>
     </table>
@@ -353,10 +348,16 @@
     <p style="font-size:.92rem;">「Wake up this app」ボタンをクリックしてください（1〜2分で復帰します）。</p>
 
     <h3>❌ パスワードが違うと言われる</h3>
-    <p style="font-size:.92rem;">月が変わるとパスワードが変わります。上記「今月のパスワード」を確認するか、Googleアカウントでログインしてください。</p>
+    <p style="font-size:.92rem;">月が変わるとパスワードが変わります。Googleアカウントでログインするか、管理者（田原）にご連絡ください。</p>
 
     <h3>❌ 音声ファイルのアップロードに失敗する</h3>
-    <p style="font-size:.92rem;">対応形式：m4a / mp3 / wav / mp4 / ogg / flac。ファイルサイズが大きい場合は時間がかかることがあります。</p>
+    <p style="font-size:.92rem;">対応形式：m4a / mp3 / wav / mp4 / ogg / flac。2〜4時間の長時間ファイルも自動チャンク分割で対応しています。</p>
+
+    <h3>❌ Groq でエラー「Request Entity Too Large」が出る</h3>
+    <div class="note">
+      <span class="note-icon">⚠️</span>
+      <span>v2.9以降は25MBを超えるファイルを自動的に5分チャンクに分割して送信します。このエラーは通常発生しなくなりました。もし出る場合はページを更新して再試行してください。</span>
+    </div>
 
     <h3>❌ AssemblyAI でエラーが出る</h3>
     <div class="note">
@@ -370,16 +371,16 @@
     <h2>ℹ️ システム情報</h2>
     <table>
       <tbody>
-        <tr><td><strong>バージョン</strong></td><td>v2.6（2026年3月）</td></tr>
+        <tr><td><strong>バージョン</strong></td><td>v2.9（2026年4月）</td></tr>
         <tr><td><strong>AIモデル</strong></td><td>Claude Haiku 4.5</td></tr>
         <tr><td><strong>アプリURL</strong></td><td><code>https://manseibuuchan-app-d3rfcc9r2uefei5ndhv58t.streamlit.app/</code></td></tr>
-        <tr><td><strong>音声文字起こし</strong></td><td>Groq Whisper（無料）/ AssemblyAI（話者識別・100時間無料）/ Colab ローカル</td></tr>
+        <tr><td><strong>音声文字起こし</strong></td><td>Groq Whisper（無料・長時間対応）/ AssemblyAI（話者識別・100時間無料）</td></tr>
         <tr><td><strong>認証方式</strong></td><td>Google アカウント認証 / 月次パスワード（フォールバック）</td></tr>
       </tbody>
     </table>
   </section>
 
 </div>
-<footer>万世ぶーちゃん v2.6 &nbsp;|&nbsp; 取扱説明書 &nbsp;|&nbsp; 最終更新：2026年3月</footer>
+<footer>万世ブーちゃん v2.9 &nbsp;|&nbsp; 取扱説明書 &nbsp;|&nbsp; 最終更新：2026年4月</footer>
 </body>
 </html>

@@ -32,7 +32,7 @@ WAV_FILE = "/tmp/meeting.wav"
 # ================================================================
 # ページ設定
 # ================================================================
-st.set_page_config(page_title="万世ぶーちゃん v2.8", page_icon="🐷", layout="centered")
+st.set_page_config(page_title="万世ブーちゃんの音声ファイルから議事録作成だブーv2.9", page_icon="🐷", layout="centered")
 
 # ================================================================
 # 月次パスワード生成（フォールバック用）
@@ -233,24 +233,54 @@ def split_audio_to_chunks(audio_path: str, chunk_minutes: int = 10) -> list:
 # 文字起こし関数（クラウドAPI）
 # ================================================================
 def transcribe_groq(audio_path: str) -> str:
-    """Groq Whisper API で文字起こし（無料・高速・話者識別なし）"""
+    """Groq Whisper API で文字起こし（25MB制限あり・大容量ファイルは自動チャンク分割）"""
     from groq import Groq
-    client = Groq(api_key=GROQ_API_KEY)
-    with open(audio_path, "rb") as f:
-        result = client.audio.transcriptions.create(
-            model="whisper-large-v3",
-            file=f,
-            language="ja",
-            response_format="verbose_json",
-            timestamp_granularities=["segment"],
-        )
-    text = ""
-    try:
-        for seg in result.segments:
-            text += "[" + str(round(seg["start"], 1)) + "s] " + seg["text"].strip() + "\n"
-    except Exception:
-        text = getattr(result, "text", "") or ""
-    return text
+    GROQ_MAX_MB = 24  # Groqの制限25MBより少し小さく設定
+    file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
+
+    if file_size_mb > GROQ_MAX_MB:
+        # 5分チャンクに分割して処理
+        chunks = split_audio_to_chunks(audio_path, chunk_minutes=5)
+        all_text = ""
+        for chunk in chunks:
+            client = Groq(api_key=GROQ_API_KEY)
+            with open(chunk["path"], "rb") as f:
+                result = client.audio.transcriptions.create(
+                    model="whisper-large-v3",
+                    file=f,
+                    language="ja",
+                    response_format="verbose_json",
+                    timestamp_granularities=["segment"],
+                )
+            try:
+                for seg in result.segments:
+                    adjusted_start = round(seg["start"] + chunk["start_sec"], 1)
+                    all_text += "[" + str(adjusted_start) + "s] " + seg["text"].strip() + "\n"
+            except Exception:
+                text = getattr(result, "text", "") or ""
+                all_text += text + "\n"
+            try:
+                os.remove(chunk["path"])
+            except Exception:
+                pass
+        return all_text
+    else:
+        client = Groq(api_key=GROQ_API_KEY)
+        with open(audio_path, "rb") as f:
+            result = client.audio.transcriptions.create(
+                model="whisper-large-v3",
+                file=f,
+                language="ja",
+                response_format="verbose_json",
+                timestamp_granularities=["segment"],
+            )
+        text = ""
+        try:
+            for seg in result.segments:
+                text += "[" + str(round(seg["start"], 1)) + "s] " + seg["text"].strip() + "\n"
+        except Exception:
+            text = getattr(result, "text", "") or ""
+        return text
 
 def transcribe_assemblyai(audio_path: str, speakers_expected: int = 2) -> str:
     """AssemblyAI で文字起こし（話者識別あり・100時間無料）"""
@@ -435,24 +465,31 @@ def play_completion_sound():
     """, height=150)
 
 # ================================================================
-# ヘッダー
+# ヘッダー（bu-chan.png をbase64埋め込み）
 # ================================================================
-st.markdown("""
+import base64 as _b64
+
+def _get_header_img() -> str:
+    """ローカルのbu-chan.pngをbase64で埋め込む（なければ絵文字フォールバック）"""
+    _IMG_B64 = "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"
+    return f'<img src="data:image/png;base64,{_IMG_B64}" style="width:80px;height:80px;object-fit:contain;" />'
+
+_header_img = _get_header_img()
+st.markdown(f"""
 <div style='text-align:center;padding:16px 0 8px 0;'>
-  <span style='font-size:52px;'>🐷</span>
-  <h1 style='margin:4px 0 2px 0;font-size:22px;'>万世ぶーちゃんの議事録サポートアプリ v2.6</h1>
-  <p style='color:#888;font-size:12px;margin:0;'>テキストを貼り付けるだけで議事録を自動作成🐷</p>
+  {_header_img}
+  <h1 style='margin:8px 0 2px 0;font-size:20px;'>万世ブーちゃんの音声ファイルから議事録作成だブーv2.9</h1>
+  <p style='color:#888;font-size:12px;margin:0;'>音声をアップロードするだけで議事録を自動作成🐷</p>
 </div>""", unsafe_allow_html=True)
 
 check_ram_on_startup()
-IS_COLAB = os.path.exists('/content')
 
-tab1, tab2 = st.tabs(["📝 テキストから作成（すぐ使える）", "🎤 音声から作成"])
+tab1, tab2 = st.tabs(["🎤 音声から作成", "📝 テキストから作成"])
 
 # ================================================================
-# タブ1: テキスト直接入力 → 議事録生成（常時稼働）
+# タブ2: テキスト直接入力 → 議事録生成（常時稼働）
 # ================================================================
-with tab1:
+with tab2:
     st.markdown("#### 文字起こしテキストを貼り付けて議事録を作成します")
 
     with st.form("minutes_form"):
@@ -511,9 +548,9 @@ with tab1:
                     st.error(f"議事録生成エラー: {e}")
 
 # ================================================================
-# タブ2: 音声文字起こし（クラウドAPI + Colab）
+# タブ1: 音声文字起こし（クラウドAPI）
 # ================================================================
-with tab2:
+with tab1:
     st.markdown("#### 音声ファイルをアップロードして文字起こし＋議事録を作成します")
 
     # ---- エンジン選択 ----
@@ -522,7 +559,6 @@ with tab2:
         [
             "🤖 Groq Whisper（無料・高速・話者識別なし）",
             "🎯 AssemblyAI（話者識別あり・100時間無料）",
-            "🐷 Colab ローカル（Colab起動時のみ）",
         ],
         index=0,
     )
@@ -545,7 +581,12 @@ with tab2:
 
             if uploaded:
                 file_size_mb = uploaded.size / (1024 * 1024)
-                st.info(f"📊 ファイルサイズ: {file_size_mb:.1f} MB")
+                GROQ_MAX_MB = 24
+                if file_size_mb > GROQ_MAX_MB:
+                    chunk_count = int(file_size_mb / GROQ_MAX_MB) + 1
+                    st.info(f"📊 ファイルサイズ: {file_size_mb:.1f} MB　🔀 {chunk_count}チャンクに分割してGroqに送信します（25MB制限対応）")
+                else:
+                    st.info(f"📊 ファイルサイズ: {file_size_mb:.1f} MB")
 
                 mode_g = st.radio("出力スタイル 📝",
                     ["議事録のみ", "議事録＋文字起こしデータ"], index=1, key="mode_groq")
@@ -591,6 +632,11 @@ with tab2:
                                 legal_html_g = ""
                                 if mode_g == "議事録＋文字起こしデータ":
                                     legal_html_g = call_claude_legal(raw_text_g, q_title_g)
+                                # ローカル保存
+                                try:
+                                    save_to_drive(fb_g, minutes_html_g, legal_html_g, raw_text_g, [], [])
+                                except Exception:
+                                    pass
                                 show_download_section(fb_g, ts_g, minutes_html_g, legal_html_g, raw_text_g, key_prefix="groq")
                                 play_completion_sound()
                             except Exception as e:
@@ -660,295 +706,13 @@ with tab2:
                                 legal_html_a = ""
                                 if mode_a == "議事録＋文字起こしデータ":
                                     legal_html_a = call_claude_legal(raw_text_a, q_title_a)
+                                # ローカル保存
+                                try:
+                                    save_to_drive(fb_a, minutes_html_a, legal_html_a, raw_text_a, [], [])
+                                except Exception:
+                                    pass
                                 show_download_section(fb_a, ts_a, minutes_html_a, legal_html_a, raw_text_a, key_prefix="aai")
                                 play_completion_sound()
                             except Exception as e:
                                 st.error(f"議事録生成エラー: {e}")
 
-    # ---- Colab ローカルエンジン ----
-    else:
-        if not IS_COLAB:
-            st.warning("""
-🐷 **Colab ローカルモードは Colab 起動時のみ使えます**
-
-以下の手順でお使いください：
-1. [Colab を開く](https://colab.research.google.com/drive/1QYZcwJuFX47EPRnsEBLRzZjQOIM2TEI2) をクリック
-2. Step 2 → Start Streamlit セルを実行（約30秒）
-3. 音声ファイルをアップロードして文字起こし
-4. 完了したテキストをコピー → 「📝 テキストから作成」タブに貼り付け
-
-**または上記の Groq / AssemblyAI エンジンをお使いください（Colab 不要）**
-            """)
-        else:
-            st.info("🐷 Colab ローカル Whisper + pyannote 話者識別モード")
-            colab_defaults = {
-                "step": 1, "audio_path": None, "file_base": "",
-                "raw_text": "", "segments_data": [], "speaker_turns": [],
-                "speaker_map": {}, "q_date": "", "q_title": "", "q_place": "",
-                "participants": "", "emphasis_items": "", "decisions": "",
-                "pending_items": "", "mode": "議事録＋文字起こしデータ",
-                "minutes_html": "", "legal_html": "",
-                "model_size": "medium",
-            }
-            for k, v in colab_defaults.items():
-                if k not in st.session_state:
-                    st.session_state[k] = v
-
-            steps_label = ["音声アップ", "文字起こし中", "話者設定", "会議メモ入力", "生成完了"]
-            st.progress((st.session_state.step - 1) / 4)
-            st.caption(steps_label[st.session_state.step - 1])
-
-            import glob as _glob
-            backups = sorted(_glob.glob("/tmp/Claude/*.json"), reverse=True)[:5]
-            if backups and st.session_state.step == 1:
-                names = [os.path.basename(b) for b in backups]
-                st.info(f"💾 以前の処理データが {len(backups)} 件見つかりました。")
-                selected = st.selectbox("復旧するセッションを選択:", names)
-                if st.button("🔄 このデータから再開する"):
-                    with open(backups[names.index(selected)]) as bf:
-                        bdata = json.load(bf)
-                    for k, v in bdata.items():
-                        st.session_state[k] = v
-                    st.rerun()
-
-            if st.session_state.step == 1:
-                st.subheader("🎙 Step 1：音声ファイルをえらぶ")
-                model_size = st.selectbox("Whisperモデル", ["medium", "small", "large-v2"], index=0)
-                mode2 = st.radio("出力スタイル 📝", ["議事録のみ", "議事録＋文字起こしデータ"], index=1, key="mode_colab")
-                st.session_state["mode"] = mode2
-                uploaded_c = st.file_uploader("音声ファイルをアップロード",
-                    type=["m4a", "mp3", "wav", "mp4", "ogg", "flac"], key="colab_upload")
-                if uploaded_c:
-                    file_size_mb_c = uploaded_c.size / (1024 * 1024)
-                    est_time = estimate_transcription_time(uploaded_c.size, model_size)
-                    # 一時保存して長さを取得
-                    _tmp_path = "/tmp/_preview_" + uploaded_c.name
-                    with open(_tmp_path, "wb") as _f:
-                        _f.write(uploaded_c.getvalue())
-                    dur_sec = get_audio_duration_sec(_tmp_path)
-                    dur_str = (f"{int(dur_sec//3600)}時間{int((dur_sec%3600)//60)}分{int(dur_sec%60)}秒"
-                               if dur_sec >= 3600 else
-                               f"{int(dur_sec//60)}分{int(dur_sec%60)}秒"
-                               if dur_sec >= 60 else f"{int(dur_sec)}秒")
-                    chunk_count = max(1, int(dur_sec // 600) + (1 if dur_sec % 600 > 0 else 0))
-                    chunk_msg = (f"　🔀 10分×{chunk_count}チャンクに分割して処理します"
-                                 if dur_sec > 600 else "")
-                    st.info(f"📊 ファイルサイズ: {file_size_mb_c:.1f} MB　🕐 音声の長さ: {dur_str}　⏱ 予想処理時間: {est_time}{chunk_msg}")
-                if uploaded_c and st.button("▶ テキスト変換スタート", type="primary"):
-                    from pydub import AudioSegment
-                    file_base_c = Path(uploaded_c.name).stem
-                    raw_path_c = "/tmp/" + uploaded_c.name
-                    with open(raw_path_c, "wb") as f:
-                        f.write(uploaded_c.getvalue())
-                    audio = AudioSegment.from_file(raw_path_c)
-                    audio.export("/tmp/meeting.wav", format="wav")
-                    st.session_state.update({
-                        "file_base": file_base_c, "model_size": model_size,
-                        "mode": mode2, "audio_path": "/tmp/meeting.wav", "step": 2,
-                    })
-                    st.rerun()
-
-            elif st.session_state.step == 2:
-                st.subheader("⚙ Step 2：文字起こし中...")
-                prog_ph = st.empty()
-                chunk_info_ph = st.empty()
-                show_animal_progress(prog_ph, 5, "準備中...")
-                try:
-                    from faster_whisper import WhisperModel
-
-                    # 音声の長さを確認してチャンク分割を決定
-                    audio_path = st.session_state.audio_path
-                    dur_sec = get_audio_duration_sec(audio_path)
-                    CHUNK_MINUTES = 10
-                    use_chunks = dur_sec > CHUNK_MINUTES * 60
-
-                    show_animal_progress(prog_ph, 15, "Whisperモデル読み込み中...")
-                    wmodel = WhisperModel(st.session_state.model_size, device="cpu", compute_type="int8")
-
-                    segments_data = []
-
-                    if use_chunks:
-                        # ── チャンク分割処理 ──────────────────
-                        total_chunks_n = max(1, int(dur_sec // (CHUNK_MINUTES * 60)) +
-                                            (1 if dur_sec % (CHUNK_MINUTES * 60) > 0 else 0))
-                        chunk_info_ph.info(f"🔀 音声を {CHUNK_MINUTES}分×{total_chunks_n}チャンクに分割して処理します")
-                        show_animal_progress(prog_ph, 20, f"音声を分割中... (全{total_chunks_n}チャンク)")
-                        chunks = split_audio_to_chunks(audio_path, chunk_minutes=CHUNK_MINUTES)
-
-                        for chunk in chunks:
-                            ci = chunk["index"]
-                            pct = 20 + int(60 * ci / total_chunks_n)
-                            start_m = int(chunk["start_sec"] // 60)
-                            end_m   = int(chunk["end_sec"] // 60)
-                            show_animal_progress(prog_ph, pct,
-                                f"チャンク {ci+1}/{total_chunks_n} 処理中... "
-                                f"({start_m}〜{end_m}分)")
-                            segs_iter, _ = wmodel.transcribe(
-                                chunk["path"], language="ja", beam_size=5)
-                            for s in segs_iter:
-                                segments_data.append({
-                                    "start": round(s.start + chunk["start_sec"], 2),
-                                    "end":   round(s.end   + chunk["start_sec"], 2),
-                                    "text":  s.text.strip(),
-                                })
-                            # チャンクファイルを即削除してメモリ節約
-                            try:
-                                os.remove(chunk["path"])
-                            except Exception:
-                                pass
-                            gc.collect()
-                            # 中間バックアップ保存
-                            pathlib.Path("/tmp/Claude").mkdir(exist_ok=True)
-                            with open("/tmp/Claude/" + st.session_state.file_base + "_backup.json", "w") as bk:
-                                json.dump({"raw_text": "", "file_base": st.session_state.file_base,
-                                           "segments_data": segments_data, "speaker_turns": []}, bk)
-                        chunk_info_ph.success(f"✅ 全{total_chunks_n}チャンクの文字起こし完了！")
-                    else:
-                        # ── 通常処理（30分以内）───────────────
-                        show_animal_progress(prog_ph, 40, "文字起こし中...")
-                        segs_iter, _ = wmodel.transcribe(audio_path, language="ja", beam_size=5)
-                        segments_data = [
-                            {"start": s.start, "end": s.end, "text": s.text.strip()}
-                            for s in segs_iter
-                        ]
-
-                    del wmodel
-                    gc.collect()
-
-                    # ── 話者識別 ──────────────────────────
-                    show_animal_progress(prog_ph, 85, "話者識別中...")
-                    mem = psutil.virtual_memory()
-                    diarization = None
-                    if mem.percent < 80:
-                        try:
-                            from pyannote.audio import Pipeline
-                            from pyannote.audio.pipelines.utils.hook import ProgressHook
-                            pipeline = Pipeline.from_pretrained(
-                                "pyannote/speaker-diarization-3.1",
-                                use_auth_token=HF_TOKEN)
-                            with ProgressHook() as hook:
-                                diarization = pipeline(audio_path, hook=hook)
-                        except Exception as e:
-                            st.warning(f"話者識別エラー（スキップ）: {e}")
-                    else:
-                        st.warning("⚠️ RAM不足のため話者識別をスキップしました")
-
-                    show_animal_progress(prog_ph, 95, "テキスト整形中...")
-                    speaker_turns = []
-                    if diarization:
-                        for turn, _, label in diarization.itertracks(yield_label=True):
-                            speaker_turns.append({"start": turn.start, "end": turn.end, "speaker": label})
-
-                    raw_text_built = ""
-                    if speaker_turns:
-                        for seg in segments_data:
-                            spk = next((t["speaker"] for t in speaker_turns
-                                if t["start"] <= seg["start"] < t["end"]), "不明")
-                            raw_text_built += "[" + str(round(seg["start"], 1)) + "s] " + spk + ": " + seg["text"] + "\n"
-                    else:
-                        for seg in segments_data:
-                            raw_text_built += "[" + str(round(seg["start"], 1)) + "s] " + seg["text"] + "\n"
-
-                    st.session_state.update({
-                        "raw_text": raw_text_built, "segments_data": segments_data,
-                        "speaker_turns": speaker_turns, "step": 3,
-                    })
-                    pathlib.Path("/tmp/Claude").mkdir(exist_ok=True)
-                    with open("/tmp/Claude/" + st.session_state.file_base + "_backup.json", "w") as bk:
-                        json.dump({"raw_text": raw_text_built, "file_base": st.session_state.file_base,
-                                   "segments_data": segments_data, "speaker_turns": speaker_turns}, bk)
-                    show_animal_progress(prog_ph, 100, "🎉 完了！")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"文字起こしエラー: {e}")
-
-            elif st.session_state.step == 3:
-                st.subheader("👥 Step 3：話している人の名前を設定")
-                speakers = sorted(set(t["speaker"] for t in st.session_state.speaker_turns)) \
-                    if st.session_state.speaker_turns else []
-                speaker_map = {}
-                for sp in speakers:
-                    name = st.text_input(f"{sp} の名前（例: ぶーちゃん）:",
-                        value=st.session_state.speaker_map.get(sp, ""), key=f"sp_{sp}")
-                    speaker_map[sp] = name
-                if st.button("▶ 次のステップへ", type="primary"):
-                    new_text = st.session_state.raw_text
-                    for sp, name in speaker_map.items():
-                        if name:
-                            new_text = new_text.replace(sp, name)
-                    st.session_state["raw_text"] = new_text
-                    st.session_state["speaker_map"] = speaker_map
-                    st.session_state["step"] = 4
-                    st.rerun()
-
-            elif st.session_state.step == 4:
-                st.subheader("📋 Step 4：会議のメモを入力")
-                participants_c = st.text_area("参加者（氏名・所属）", value=st.session_state.participants,
-                    placeholder="例: ぶーちゃん社長（万世ぶーちゃん商事）")
-                emphasis_c  = st.text_area("強調したい項目", value=st.session_state.emphasis_items,
-                    placeholder="例: 次回の搬入日程や費用負担についてまとめたい")
-                decisions_c = st.text_area("決定事項", value=st.session_state.decisions,
-                    placeholder="例: 来月までにサンプルを提出する")
-                pending_c   = st.text_area("未決定の宿題事項", value=st.session_state.pending_items,
-                    placeholder="例: もーちゃん食品から来週中に回答をもらう")
-                col1c, col2c = st.columns(2)
-                with col1c:
-                    q_date_c  = st.text_input("会議日時", value=st.session_state.q_date)
-                    q_place_c = st.text_input("場所", value=st.session_state.q_place)
-                with col2c:
-                    q_title_c = st.text_input("会議タイトル", value=st.session_state.q_title)
-                mode3 = st.radio("出力スタイル 📝", ["議事録のみ", "議事録＋文字起こしデータ"],
-                    index=0 if st.session_state.mode == "議事録のみ" else 1, key="mode3")
-                if st.button("🐷 議事録を作る", type="primary"):
-                    st.session_state.update({
-                        "participants": participants_c, "emphasis_items": emphasis_c,
-                        "decisions": decisions_c, "pending_items": pending_c,
-                        "q_date": q_date_c, "q_title": q_title_c, "q_place": q_place_c,
-                        "mode": mode3, "step": 5,
-                    })
-                    st.rerun()
-
-            elif st.session_state.step == 5:
-                st.subheader("✅ Step 5：かんたん生成＆ダウンロード")
-                if not st.session_state.minutes_html:
-                    with st.spinner("Claude API で議事録を生成中..."):
-                        try:
-                            minutes_html_c = call_claude_minutes(
-                                st.session_state.raw_text, st.session_state.q_date,
-                                st.session_state.q_title, st.session_state.q_place,
-                                st.session_state.participants, st.session_state.emphasis_items,
-                                st.session_state.decisions, st.session_state.pending_items,
-                            )
-                            st.session_state["minutes_html"] = minutes_html_c
-                        except Exception as e:
-                            st.error(f"議事録生成エラー: {e}")
-                    if st.session_state.mode == "議事録＋文字起こしデータ":
-                        with st.spinner("文字起こしデータを整理中..."):
-                            try:
-                                legal_html_c = call_claude_legal(
-                                    st.session_state.raw_text, st.session_state.q_title)
-                                st.session_state["legal_html"] = legal_html_c
-                            except Exception as e:
-                                st.warning(f"文字起こしデータ整理エラー: {e}")
-                    play_completion_sound()
-
-                fb_c = st.session_state.file_base
-                from datetime import datetime as _dt
-                ts_c = _dt.now().strftime("%Y%m%d_%H%M%S")
-                show_download_section(fb_c, ts_c,
-                    st.session_state.minutes_html,
-                    st.session_state.legal_html,
-                    st.session_state.raw_text,
-                    key_prefix="colab")
-                st.divider()
-                col3c, col4c = st.columns(2)
-                with col3c:
-                    if st.button("🔄 別の音声ファイルを処理する"):
-                        for k, v in colab_defaults.items():
-                            st.session_state[k] = v
-                        st.rerun()
-                with col4c:
-                    if st.button("✏️ 会議情報を修正して再生成"):
-                        st.session_state["step"] = 4
-                        st.session_state["minutes_html"] = ""
-                        st.rerun()
