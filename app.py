@@ -601,17 +601,23 @@ with tab1:
     st.markdown("#### 音声ファイルをアップロードして文字起こし＋議事録を作成します")
 
     # ---- エンジン選択 ----
+    st.markdown("""
+| エンジン | 話者識別 | 速度 | 無料枠 | 向き・不向き |
+|---------|--------|------|--------|------------|
+| 🎯 AssemblyAI | ✅ あり | やや遅い | 100時間/月 | **会議録音・法的用途** |
+| 🤖 Groq Whisper | ❌ なし | 速い | 2時間/時 | 1人録音・テスト用 |
+""")
     engine = st.radio(
         "🔧 文字起こしエンジンを選択",
         [
-            "🤖 Groq Whisper（無料・高速・話者識別なし）",
-            "🎯 AssemblyAI（話者識別あり・100時間無料）",
+            "🎯 AssemblyAI（話者識別あり・100時間/月無料）",
+            "🤖 Groq Whisper（話者識別なし・2時間/時制限）",
         ],
         index=0,
     )
 
     # ---- Groq エンジン ----
-    if engine == "🤖 Groq Whisper（無料・高速・話者識別なし）":
+    if engine == "🤖 Groq Whisper（話者識別なし・2時間/時制限）":
         if not GROQ_API_KEY:
             st.warning("""
 ⚠️ **GROQ_API_KEY が設定されていません**
@@ -621,7 +627,8 @@ with tab1:
 3. Streamlit Cloud の Secrets に `GROQ_API_KEY = "gsk_..."` を追加
             """)
         else:
-            st.info("💡 Groq Whisper は無料で高速に文字起こしできます。話者識別（誰が話したか）はありません。")
+            st.warning("⚠️ Groq Whisper は話者識別なし（誰が話したか判別できません）。会議録音や法的用途には AssemblyAI をお使いください。")
+            st.info("💡 Groq は1人の録音・テスト用途に適しています。無料枠は **2時間/時** の制限があります。")
             uploaded = st.file_uploader("音声ファイルをアップロード",
                 type=["m4a", "mp3", "wav", "mp4", "ogg", "flac"],
                 key="groq_upload")
@@ -664,7 +671,14 @@ with tab1:
                             st.text_area("📄 文字起こし結果（確認・編集可）", value=raw_text_g, height=200,
                                 key="groq_result")
                         except Exception as e:
-                            st.error(f"文字起こしエラー: {e}")
+                            err_str = str(e)
+                            if "429" in err_str or "rate_limit" in err_str.lower():
+                                import re as _re
+                                wait = _re.search(r"try again in ([\d]+m[\d.]+s|[\d.]+s)", err_str)
+                                wait_msg = wait.group(1) if wait else "しばらく"
+                                st.error("⏳ Groqの無料枠（2時間/時）を使い切りました。" + wait_msg + "後に再試行するか、AssemblyAI に切り替えてください（話者識別もできます）。")
+                            else:
+                                st.error(f"文字起こしエラー: {e}")
                             raw_text_g = ""
 
                     if raw_text_g and ANTHROPIC_API_KEY:
@@ -690,7 +704,7 @@ with tab1:
                                 st.error(f"議事録生成エラー: {e}")
 
     # ---- AssemblyAI エンジン ----
-    elif engine == "🎯 AssemblyAI（話者識別あり・100時間無料）":
+    elif engine == "🎯 AssemblyAI（話者識別あり・100時間/月無料）":
         if not ASSEMBLYAI_API_KEY:
             st.warning("""
 ⚠️ **ASSEMBLYAI_API_KEY が設定されていません**
@@ -700,7 +714,7 @@ with tab1:
 3. Streamlit Cloud の Secrets に `ASSEMBLYAI_API_KEY = "..."` を追加
             """)
         else:
-            st.info("💡 AssemblyAI は **話者識別（誰が話したか）** に対応しています。処理に1〜3分かかります。")
+            st.info("✅ AssemblyAI は **話者識別（誰が話したか自動判別）** に対応。会議・法的用途に最適。処理時間1〜3分・月100時間無料。")
             uploaded_a = st.file_uploader("音声ファイルをアップロード",
                 type=["m4a", "mp3", "wav", "mp4", "ogg", "flac"],
                 key="aai_upload")
