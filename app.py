@@ -154,6 +154,11 @@ DEFAULTS = {
     "drive_save_dir": "", "crash_recovered": False,
     "model_size": "medium",
     "speaker_map": {},
+    # ── 音声タブ共通フォーム（エンジン切替・ファイル変更で消えないよう共有）
+    "af_date": str(date.today()), "af_title": "", "af_place": "",
+    "af_participants": "", "af_emphasis": "", "af_decisions": "",
+    "af_pending": "", "af_mode": "議事録＋文字起こしデータ",
+    "af_speakers_n": 2,
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -643,20 +648,20 @@ with tab1:
                     st.info(f"📊 ファイルサイズ: {file_size_mb:.1f} MB")
 
                 mode_g = st.radio("出力スタイル 📝",
-                    ["議事録のみ", "議事録＋文字起こしデータ"], index=1, key="mode_groq")
+                    ["議事録のみ", "議事録＋文字起こしデータ"], index=1, key="af_mode")
                 col1, col2 = st.columns(2)
                 with col1:
-                    q_date_g  = st.text_input("📅 会議日時", placeholder="例: 2026年3月30日", key="date_g")
-                    q_place_g = st.text_input("📍 場所", placeholder="例: 会議室A", key="place_g")
+                    q_date_g  = st.text_input("📅 会議日時", placeholder="例: 2026年3月30日", key="af_date")
+                    q_place_g = st.text_input("📍 場所", placeholder="例: 会議室A", key="af_place")
                 with col2:
-                    q_title_g = st.text_input("📌 タイトル", placeholder="例: 定例ミーティング", key="title_g")
+                    q_title_g = st.text_input("📌 タイトル", placeholder="例: 定例ミーティング", key="af_title")
                     participants_g = st.text_area("👥 参加者",
-                        placeholder="例: ぶーちゃん、もーちゃん", height=68, key="part_g")
-                emphasis_g  = st.text_area("⭐ 強調したい項目", height=56, key="emph_g",
+                        placeholder="例: ぶーちゃん、もーちゃん", height=68, key="af_participants")
+                emphasis_g  = st.text_area("⭐ 強調したい項目", height=56, key="af_emphasis",
                     placeholder="例: 費用負担について")
-                decisions_g = st.text_area("✅ 決定事項", height=56, key="deci_g",
+                decisions_g = st.text_area("✅ 決定事項", height=56, key="af_decisions",
                     placeholder="例: 来月までにサンプル提出")
-                pending_g   = st.text_area("📌 未決定の宿題事項", height=56, key="pend_g",
+                pending_g   = st.text_area("📌 未決定の宿題事項", height=56, key="af_pending",
                     placeholder="例: もーちゃんから来週中に回答")
 
                 if st.button("▶ 文字起こし＋議事録を作成（Groq）", type="primary"):
@@ -740,22 +745,22 @@ with tab1:
                 file_size_mb_a = uploaded_a.size / (1024 * 1024)
                 st.info(f"📊 ファイルサイズ: {file_size_mb_a:.1f} MB")
 
-                speakers_n = st.number_input("👥 話者の人数（目安）", min_value=1, max_value=10, value=2, key="spk_n")
+                speakers_n = st.number_input("👥 話者の人数（目安）", min_value=1, max_value=10, value=2, key="af_speakers_n")
                 mode_a = st.radio("出力スタイル 📝",
-                    ["議事録のみ", "議事録＋文字起こしデータ"], index=1, key="mode_aai")
+                    ["議事録のみ", "議事録＋文字起こしデータ"], index=1, key="af_mode")
                 col1a, col2a = st.columns(2)
                 with col1a:
-                    q_date_a  = st.text_input("📅 会議日時", placeholder="例: 2026年3月30日", key="date_a")
-                    q_place_a = st.text_input("📍 場所", placeholder="例: 会議室A", key="place_a")
+                    q_date_a  = st.text_input("📅 会議日時", placeholder="例: 2026年3月30日", key="af_date")
+                    q_place_a = st.text_input("📍 場所", placeholder="例: 会議室A", key="af_place")
                 with col2a:
-                    q_title_a = st.text_input("📌 タイトル", placeholder="例: 定例ミーティング", key="title_a")
+                    q_title_a = st.text_input("📌 タイトル", placeholder="例: 定例ミーティング", key="af_title")
                     participants_a = st.text_area("👥 参加者",
-                        placeholder="例: ぶーちゃん、もーちゃん", height=68, key="part_a")
-                emphasis_a  = st.text_area("⭐ 強調したい項目", height=56, key="emph_a",
+                        placeholder="例: ぶーちゃん、もーちゃん", height=68, key="af_participants")
+                emphasis_a  = st.text_area("⭐ 強調したい項目", height=56, key="af_emphasis",
                     placeholder="例: 費用負担について")
-                decisions_a = st.text_area("✅ 決定事項", height=56, key="deci_a",
+                decisions_a = st.text_area("✅ 決定事項", height=56, key="af_decisions",
                     placeholder="例: 来月までにサンプル提出")
-                pending_a   = st.text_area("📌 未決定の宿題事項", height=56, key="pend_a",
+                pending_a   = st.text_area("📌 未決定の宿題事項", height=56, key="af_pending",
                     placeholder="例: もーちゃんから来週中に回答")
 
                 if st.button("▶ 文字起こし＋議事録を作成（AssemblyAI）", type="primary"):
