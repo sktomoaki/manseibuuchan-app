@@ -1,7 +1,6 @@
 streamlit>=1.41.0
 anthropic>=0.20.0
 psutil>=5.9.0
-pydub>=0.25.0
 groq>=0.8.0
 assemblyai>=0.30.0
 Authlib>=1.3.2

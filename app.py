@@ -198,40 +198,47 @@ def estimate_transcription_time(file_size_bytes, model_name="medium"):
         return f"約{int(estimated_sec/3600)}時間{int((estimated_sec%3600)/60)}分"
 
 def get_audio_duration_sec(audio_path: str) -> float:
-    """音声ファイルの長さ（秒）を返す"""
+    """音声ファイルの長さ（秒）を返す（ffprobe使用・pyaudioop不要）"""
     try:
-        from pydub import AudioSegment
-        audio = AudioSegment.from_file(audio_path)
-        return len(audio) / 1000.0
+        import subprocess
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
+            capture_output=True, text=True, timeout=30
+        )
+        return float(result.stdout.strip())
     except Exception:
         return 0.0
 
 def split_audio_to_chunks(audio_path: str, chunk_minutes: int = 10) -> list:
-    """音声をN分ごとのチャンクに分割してリストで返す"""
-    from pydub import AudioSegment
-    audio = AudioSegment.from_file(audio_path)
-    duration_ms = len(audio)
-    chunk_ms = chunk_minutes * 60 * 1000
+    """音声をN分ごとのチャンクに分割してリストで返す（ffmpeg使用・pyaudioop不要）"""
+    import subprocess
+    duration_sec = get_audio_duration_sec(audio_path)
+    if duration_sec <= 0:
+        return [{"path": audio_path, "start_sec": 0.0, "end_sec": 0.0, "index": 0}]
+    chunk_sec = chunk_minutes * 60
     chunks = []
-    for i, start_ms in enumerate(range(0, duration_ms, chunk_ms)):
-        end_ms = min(start_ms + chunk_ms, duration_ms)
-        chunk = audio[start_ms:end_ms]
+    i = 0
+    start = 0.0
+    while start < duration_sec:
+        end = min(start + chunk_sec, duration_sec)
         chunk_path = f"/tmp/chunk_{i:03d}.wav"
-        chunk.export(chunk_path, format="wav")
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", audio_path,
+             "-ss", str(start), "-t", str(chunk_sec),
+             "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
+             chunk_path],
+            capture_output=True, timeout=300
+        )
         chunks.append({
             "path": chunk_path,
-            "start_sec": start_ms / 1000.0,
-            "end_sec": end_ms / 1000.0,
+            "start_sec": start,
+            "end_sec": end,
             "index": i,
         })
-        del chunk
-    del audio
-    gc.collect()
+        start += chunk_sec
+        i += 1
     return chunks
-
-# ================================================================
-# 文字起こし関数（クラウドAPI）
-# ================================================================
 def transcribe_groq(audio_path: str) -> str:
     """Groq Whisper API で文字起こし（25MB制限あり・大容量ファイルは自動チャンク分割）"""
     from groq import Groq
