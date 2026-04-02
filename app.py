@@ -96,6 +96,37 @@ def check_auth():
 check_auth()
 
 # ================================================================
+# サイドバー：利用ログ閲覧
+# ================================================================
+with st.sidebar:
+    st.markdown("---")
+    with st.expander("📊 利用ログ"):
+        _log_path = os.path.join(DRIVE_BASE, "usage_log.csv")
+        if os.path.exists(_log_path):
+            import csv as _csv_mod
+            with open(_log_path, encoding="utf-8-sig", newline="") as _lf:
+                _log_csv_raw = _lf.read()
+            _log_rows = list(_csv_mod.DictReader(_log_csv_raw.splitlines()))
+            st.caption(f"📝 累計 {len(_log_rows)} 件")
+            for _r in reversed(_log_rows[-20:]):
+                _tok = _r.get("total_tokens", "-")
+                _eng = _r.get("engine", "-")
+                _usr = _r.get("user_name", "-")
+                _ttl = _r.get("meeting_title", "")[:10]
+                _ts  = _r.get("timestamp", "")[:16]
+                st.caption(f"🕐 {_ts}｜{_usr}｜{_eng[:4]}｜{_ttl}｜{_tok}tok")
+            st.download_button(
+                "📥 ログCSVをダウンロード",
+                data=_log_csv_raw.encode("utf-8-sig"),
+                file_name="usage_log.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key="dl_usage_log",
+            )
+        else:
+            st.caption("📭 まだ利用ログはありません")
+
+# ================================================================
 # 起動時RAM確認・警告
 # ================================================================
 def check_ram_on_startup():
@@ -388,7 +419,8 @@ def call_claude_minutes(raw_text, q_date, q_title, q_place,
         model=CLAUDE_MODEL, max_tokens=4096,
         messages=[{"role": "user", "content": prompt}]
     )
-    return resp.content[0].text
+    usage = {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens}
+    return resp.content[0].text, usage
 
 def call_claude_legal(raw_text, q_title):
     import anthropic as _ant
@@ -411,7 +443,70 @@ def call_claude_legal(raw_text, q_title):
         model=CLAUDE_MODEL, max_tokens=4096,
         messages=[{"role": "user", "content": prompt}]
     )
-    return resp.content[0].text
+    usage = {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens}
+    return resp.content[0].text, usage
+
+# ================================================================
+# ユーザー情報取得
+# ================================================================
+def _get_current_user():
+    """Google OAuth からユーザー情報を取得（未ログイン時は '不明'）"""
+    try:
+        email = getattr(st.user, "email", None) or "不明"
+        name  = getattr(st.user, "name",  None) or "不明"
+        return email, name
+    except Exception:
+        return "不明", "不明"
+
+# ================================================================
+# 利用ログ記録
+# ================================================================
+def write_usage_log(engine, file_name, file_size_mb,
+                    meeting_title, meeting_date, output_mode,
+                    min_usage, leg_usage, success=True):
+    """DRIVE_BASE/usage_log.csv に1行追記する"""
+    import csv
+    from datetime import datetime as _dt
+    user_email, user_name = _get_current_user()
+    log_path = os.path.join(DRIVE_BASE, "usage_log.csv")
+    fieldnames = [
+        "timestamp", "user_email", "user_name", "engine",
+        "meeting_title", "meeting_date", "output_mode",
+        "file_name", "file_size_mb",
+        "min_input_tokens", "min_output_tokens",
+        "leg_input_tokens", "leg_output_tokens",
+        "total_tokens", "success",
+    ]
+    min_in  = (min_usage or {}).get("input_tokens",  0)
+    min_out = (min_usage or {}).get("output_tokens", 0)
+    leg_in  = (leg_usage or {}).get("input_tokens",  0)
+    leg_out = (leg_usage or {}).get("output_tokens", 0)
+    row = {
+        "timestamp":        _dt.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "user_email":       user_email,
+        "user_name":        user_name,
+        "engine":           engine,
+        "meeting_title":    meeting_title or "",
+        "meeting_date":     meeting_date  or "",
+        "output_mode":      output_mode   or "",
+        "file_name":        file_name     or "",
+        "file_size_mb":     f"{file_size_mb:.2f}" if file_size_mb else "",
+        "min_input_tokens": min_in,
+        "min_output_tokens":min_out,
+        "leg_input_tokens": leg_in,
+        "leg_output_tokens":leg_out,
+        "total_tokens":     min_in + min_out + leg_in + leg_out,
+        "success":          success,
+    }
+    file_exists = os.path.exists(log_path)
+    try:
+        with open(log_path, "a", newline="", encoding="utf-8-sig") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(row)
+    except Exception:
+        pass  # ログ書き込み失敗はサイレントに無視
 
 # ================================================================
 # ZIP一括ダウンロード
@@ -576,7 +671,7 @@ with tab2:
         else:
             with st.spinner("Claude が議事録を生成中... 🐷"):
                 try:
-                    minutes_html = call_claude_minutes(
+                    minutes_html, min_usage = call_claude_minutes(
                         raw_text, q_date, q_title, q_place,
                         participants, emphasis, decisions, pending
                     )
@@ -585,14 +680,21 @@ with tab2:
                     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                     file_base = q_title.strip().replace(" ", "_") or "議事録"
                     legal_html = ""
+                    leg_usage  = None
 
                     if mode == "議事録＋文字起こしデータ":
                         with st.spinner("文字起こしデータを整理中..."):
                             try:
-                                legal_html = call_claude_legal(raw_text, q_title)
+                                legal_html, leg_usage = call_claude_legal(raw_text, q_title)
                             except Exception as e:
                                 st.warning(f"文字起こしデータ整理エラー: {e}")
 
+                    try:
+                        write_usage_log("テキスト入力", "", 0,
+                                        q_title, q_date, mode,
+                                        min_usage, leg_usage, success=True)
+                    except Exception:
+                        pass
                     show_download_section(file_base, ts, minutes_html, legal_html, raw_text, key_prefix="tab1")
                     play_completion_sound()
 
@@ -709,15 +811,20 @@ with tab1:
                                 from datetime import datetime
                                 ts_g = datetime.now().strftime("%Y%m%d_%H%M%S")
                                 fb_g = q_title_g.strip().replace(" ", "_") or "議事録"
-                                minutes_html_g = call_claude_minutes(
+                                minutes_html_g, min_usage_g = call_claude_minutes(
                                     raw_text_g, q_date_g, q_title_g, q_place_g,
                                     participants_g, emphasis_g, decisions_g, pending_g)
                                 legal_html_g = ""
+                                leg_usage_g  = None
                                 if mode_g == "議事録＋文字起こしデータ":
-                                    legal_html_g = call_claude_legal(raw_text_g, q_title_g)
-                                # ローカル保存
+                                    legal_html_g, leg_usage_g = call_claude_legal(raw_text_g, q_title_g)
+                                # 利用ログ記録
                                 try:
-                                    save_to_drive(fb_g, minutes_html_g, legal_html_g, raw_text_g, [], [])
+                                    write_usage_log(
+                                        "Groq Whisper", uploaded.name,
+                                        uploaded.size / (1024*1024),
+                                        q_title_g, q_date_g, mode_g,
+                                        min_usage_g, leg_usage_g, success=True)
                                 except Exception:
                                     pass
                                 show_download_section(fb_g, ts_g, minutes_html_g, legal_html_g, raw_text_g, key_prefix="groq")
@@ -783,15 +890,20 @@ with tab1:
                                 from datetime import datetime
                                 ts_a = datetime.now().strftime("%Y%m%d_%H%M%S")
                                 fb_a = q_title_a.strip().replace(" ", "_") or "議事録"
-                                minutes_html_a = call_claude_minutes(
+                                minutes_html_a, min_usage_a = call_claude_minutes(
                                     raw_text_a, q_date_a, q_title_a, q_place_a,
                                     participants_a, emphasis_a, decisions_a, pending_a)
                                 legal_html_a = ""
+                                leg_usage_a  = None
                                 if mode_a == "議事録＋文字起こしデータ":
-                                    legal_html_a = call_claude_legal(raw_text_a, q_title_a)
-                                # ローカル保存
+                                    legal_html_a, leg_usage_a = call_claude_legal(raw_text_a, q_title_a)
+                                # 利用ログ記録
                                 try:
-                                    save_to_drive(fb_a, minutes_html_a, legal_html_a, raw_text_a, [], [])
+                                    write_usage_log(
+                                        "AssemblyAI", uploaded_a.name,
+                                        uploaded_a.size / (1024*1024),
+                                        q_title_a, q_date_a, mode_a,
+                                        min_usage_a, leg_usage_a, success=True)
                                 except Exception:
                                     pass
                                 show_download_section(fb_a, ts_a, minutes_html_a, legal_html_a, raw_text_a, key_prefix="aai")
