@@ -32,7 +32,7 @@ WAV_FILE = "/tmp/meeting.wav"
 # ================================================================
 # ページ設定
 # ================================================================
-st.set_page_config(page_title="万世ぶーちゃん v2.7", page_icon="🐷", layout="centered")
+st.set_page_config(page_title="万世ぶーちゃん v2.8", page_icon="🐷", layout="centered")
 
 # ================================================================
 # 月次パスワード生成（フォールバック用）
@@ -196,6 +196,38 @@ def estimate_transcription_time(file_size_bytes, model_name="medium"):
         return f"約{int(estimated_sec/60)}分{int(estimated_sec%60)}秒"
     else:
         return f"約{int(estimated_sec/3600)}時間{int((estimated_sec%3600)/60)}分"
+
+def get_audio_duration_sec(audio_path: str) -> float:
+    """音声ファイルの長さ（秒）を返す"""
+    try:
+        from pydub import AudioSegment
+        audio = AudioSegment.from_file(audio_path)
+        return len(audio) / 1000.0
+    except Exception:
+        return 0.0
+
+def split_audio_to_chunks(audio_path: str, chunk_minutes: int = 10) -> list:
+    """音声をN分ごとのチャンクに分割してリストで返す"""
+    from pydub import AudioSegment
+    audio = AudioSegment.from_file(audio_path)
+    duration_ms = len(audio)
+    chunk_ms = chunk_minutes * 60 * 1000
+    chunks = []
+    for i, start_ms in enumerate(range(0, duration_ms, chunk_ms)):
+        end_ms = min(start_ms + chunk_ms, duration_ms)
+        chunk = audio[start_ms:end_ms]
+        chunk_path = f"/tmp/chunk_{i:03d}.wav"
+        chunk.export(chunk_path, format="wav")
+        chunks.append({
+            "path": chunk_path,
+            "start_sec": start_ms / 1000.0,
+            "end_sec": end_ms / 1000.0,
+            "index": i,
+        })
+        del chunk
+    del audio
+    gc.collect()
+    return chunks
 
 # ================================================================
 # 文字起こし関数（クラウドAPI）
@@ -689,7 +721,19 @@ with tab2:
                 if uploaded_c:
                     file_size_mb_c = uploaded_c.size / (1024 * 1024)
                     est_time = estimate_transcription_time(uploaded_c.size, model_size)
-                    st.info(f"📊 ファイルサイズ: {file_size_mb_c:.1f} MB　⏱ 予想処理時間: {est_time}")
+                    # 一時保存して長さを取得
+                    _tmp_path = "/tmp/_preview_" + uploaded_c.name
+                    with open(_tmp_path, "wb") as _f:
+                        _f.write(uploaded_c.getvalue())
+                    dur_sec = get_audio_duration_sec(_tmp_path)
+                    dur_str = (f"{int(dur_sec//3600)}時間{int((dur_sec%3600)//60)}分{int(dur_sec%60)}秒"
+                               if dur_sec >= 3600 else
+                               f"{int(dur_sec//60)}分{int(dur_sec%60)}秒"
+                               if dur_sec >= 60 else f"{int(dur_sec)}秒")
+                    chunk_count = max(1, int(dur_sec // 600) + (1 if dur_sec % 600 > 0 else 0))
+                    chunk_msg = (f"　🔀 10分×{chunk_count}チャンクに分割して処理します"
+                                 if dur_sec > 600 else "")
+                    st.info(f"📊 ファイルサイズ: {file_size_mb_c:.1f} MB　🕐 音声の長さ: {dur_str}　⏱ 予想処理時間: {est_time}{chunk_msg}")
                 if uploaded_c and st.button("▶ テキスト変換スタート", type="primary"):
                     from pydub import AudioSegment
                     file_base_c = Path(uploaded_c.name).stem
@@ -707,17 +751,72 @@ with tab2:
             elif st.session_state.step == 2:
                 st.subheader("⚙ Step 2：文字起こし中...")
                 prog_ph = st.empty()
-                show_animal_progress(prog_ph, 10, "準備中...")
+                chunk_info_ph = st.empty()
+                show_animal_progress(prog_ph, 5, "準備中...")
                 try:
                     from faster_whisper import WhisperModel
-                    show_animal_progress(prog_ph, 30, "Whisperモデル読み込み中...")
+
+                    # 音声の長さを確認してチャンク分割を決定
+                    audio_path = st.session_state.audio_path
+                    dur_sec = get_audio_duration_sec(audio_path)
+                    CHUNK_MINUTES = 10
+                    use_chunks = dur_sec > CHUNK_MINUTES * 60
+
+                    show_animal_progress(prog_ph, 15, "Whisperモデル読み込み中...")
                     wmodel = WhisperModel(st.session_state.model_size, device="cpu", compute_type="int8")
-                    show_animal_progress(prog_ph, 50, "文字起こし中...")
-                    segs_iter, _ = wmodel.transcribe(st.session_state.audio_path, language="ja", beam_size=5)
-                    segments = list(segs_iter)
+
+                    segments_data = []
+
+                    if use_chunks:
+                        # ── チャンク分割処理 ──────────────────
+                        total_chunks_n = max(1, int(dur_sec // (CHUNK_MINUTES * 60)) +
+                                            (1 if dur_sec % (CHUNK_MINUTES * 60) > 0 else 0))
+                        chunk_info_ph.info(f"🔀 音声を {CHUNK_MINUTES}分×{total_chunks_n}チャンクに分割して処理します")
+                        show_animal_progress(prog_ph, 20, f"音声を分割中... (全{total_chunks_n}チャンク)")
+                        chunks = split_audio_to_chunks(audio_path, chunk_minutes=CHUNK_MINUTES)
+
+                        for chunk in chunks:
+                            ci = chunk["index"]
+                            pct = 20 + int(60 * ci / total_chunks_n)
+                            start_m = int(chunk["start_sec"] // 60)
+                            end_m   = int(chunk["end_sec"] // 60)
+                            show_animal_progress(prog_ph, pct,
+                                f"チャンク {ci+1}/{total_chunks_n} 処理中... "
+                                f"({start_m}〜{end_m}分)")
+                            segs_iter, _ = wmodel.transcribe(
+                                chunk["path"], language="ja", beam_size=5)
+                            for s in segs_iter:
+                                segments_data.append({
+                                    "start": round(s.start + chunk["start_sec"], 2),
+                                    "end":   round(s.end   + chunk["start_sec"], 2),
+                                    "text":  s.text.strip(),
+                                })
+                            # チャンクファイルを即削除してメモリ節約
+                            try:
+                                os.remove(chunk["path"])
+                            except Exception:
+                                pass
+                            gc.collect()
+                            # 中間バックアップ保存
+                            pathlib.Path("/tmp/Claude").mkdir(exist_ok=True)
+                            with open("/tmp/Claude/" + st.session_state.file_base + "_backup.json", "w") as bk:
+                                json.dump({"raw_text": "", "file_base": st.session_state.file_base,
+                                           "segments_data": segments_data, "speaker_turns": []}, bk)
+                        chunk_info_ph.success(f"✅ 全{total_chunks_n}チャンクの文字起こし完了！")
+                    else:
+                        # ── 通常処理（30分以内）───────────────
+                        show_animal_progress(prog_ph, 40, "文字起こし中...")
+                        segs_iter, _ = wmodel.transcribe(audio_path, language="ja", beam_size=5)
+                        segments_data = [
+                            {"start": s.start, "end": s.end, "text": s.text.strip()}
+                            for s in segs_iter
+                        ]
+
                     del wmodel
                     gc.collect()
-                    show_animal_progress(prog_ph, 70, "話者識別中...")
+
+                    # ── 話者識別 ──────────────────────────
+                    show_animal_progress(prog_ph, 85, "話者識別中...")
                     mem = psutil.virtual_memory()
                     diarization = None
                     if mem.percent < 80:
@@ -728,17 +827,18 @@ with tab2:
                                 "pyannote/speaker-diarization-3.1",
                                 use_auth_token=HF_TOKEN)
                             with ProgressHook() as hook:
-                                diarization = pipeline(st.session_state.audio_path, hook=hook)
+                                diarization = pipeline(audio_path, hook=hook)
                         except Exception as e:
                             st.warning(f"話者識別エラー（スキップ）: {e}")
                     else:
                         st.warning("⚠️ RAM不足のため話者識別をスキップしました")
-                    show_animal_progress(prog_ph, 90, "テキスト整形中...")
-                    segments_data = [{"start": s.start, "end": s.end, "text": s.text.strip()} for s in segments]
+
+                    show_animal_progress(prog_ph, 95, "テキスト整形中...")
                     speaker_turns = []
                     if diarization:
                         for turn, _, label in diarization.itertracks(yield_label=True):
                             speaker_turns.append({"start": turn.start, "end": turn.end, "speaker": label})
+
                     raw_text_built = ""
                     if speaker_turns:
                         for seg in segments_data:
@@ -748,6 +848,7 @@ with tab2:
                     else:
                         for seg in segments_data:
                             raw_text_built += "[" + str(round(seg["start"], 1)) + "s] " + seg["text"] + "\n"
+
                     st.session_state.update({
                         "raw_text": raw_text_built, "segments_data": segments_data,
                         "speaker_turns": speaker_turns, "step": 3,
@@ -756,7 +857,7 @@ with tab2:
                     with open("/tmp/Claude/" + st.session_state.file_base + "_backup.json", "w") as bk:
                         json.dump({"raw_text": raw_text_built, "file_base": st.session_state.file_base,
                                    "segments_data": segments_data, "speaker_turns": speaker_turns}, bk)
-                    show_animal_progress(prog_ph, 100, "完了！")
+                    show_animal_progress(prog_ph, 100, "🎉 完了！")
                     st.rerun()
                 except Exception as e:
                     st.error(f"文字起こしエラー: {e}")
