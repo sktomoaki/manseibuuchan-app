@@ -198,7 +198,8 @@ def estimate_transcription_time(file_size_bytes, model_name="medium"):
         return f"約{int(estimated_sec/3600)}時間{int((estimated_sec%3600)/60)}分"
 
 def get_audio_duration_sec(audio_path: str) -> float:
-    """音声ファイルの長さ（秒）を返す（ffprobe使用・pyaudioop不要）"""
+    """音声ファイルの長さ（秒）を返す（ffprobe優先・mutagen フォールバック）"""
+    # 1st: ffprobe
     try:
         import subprocess
         result = subprocess.run(
@@ -206,37 +207,76 @@ def get_audio_duration_sec(audio_path: str) -> float:
              "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
             capture_output=True, text=True, timeout=30
         )
-        return float(result.stdout.strip())
+        val = result.stdout.strip()
+        if val:
+            return float(val)
     except Exception:
-        return 0.0
+        pass
+    # 2nd: mutagen（ffprobeなし環境用）
+    try:
+        import mutagen
+        f = mutagen.File(audio_path)
+        if f and hasattr(f, "info") and hasattr(f.info, "length"):
+            return float(f.info.length)
+    except Exception:
+        pass
+    return 0.0
 
 def split_audio_to_chunks(audio_path: str, chunk_minutes: int = 10) -> list:
-    """音声をN分ごとのチャンクに分割してリストで返す（ffmpeg使用・pyaudioop不要）"""
-    import subprocess
+    """音声をN分ごとのチャンクに分割（ffmpeg優先・バイト分割フォールバック）"""
+    import subprocess, shutil
     duration_sec = get_audio_duration_sec(audio_path)
-    if duration_sec <= 0:
-        return [{"path": audio_path, "start_sec": 0.0, "end_sec": 0.0, "index": 0}]
     chunk_sec = chunk_minutes * 60
+
+    # ffmpegが使える場合
+    if duration_sec > 0 and shutil.which("ffmpeg"):
+        chunks = []
+        i = 0
+        start = 0.0
+        while start < duration_sec:
+            end = min(start + chunk_sec, duration_sec)
+            chunk_path = f"/tmp/chunk_{i:03d}.wav"
+            ret = subprocess.run(
+                ["ffmpeg", "-y", "-i", audio_path,
+                 "-ss", str(start), "-t", str(chunk_sec),
+                 "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
+                 chunk_path],
+                capture_output=True, timeout=300
+            )
+            if ret.returncode == 0 and os.path.exists(chunk_path):
+                chunks.append({
+                    "path": chunk_path,
+                    "start_sec": start,
+                    "end_sec": end,
+                    "index": i,
+                })
+            start += chunk_sec
+            i += 1
+        if chunks:
+            return chunks
+
+    # フォールバック: ファイルをバイト分割して送信
+    # （ffmpegなし環境・タイムスタンプ不正確だが動作する）
+    file_size = os.path.getsize(audio_path)
+    max_bytes = 20 * 1024 * 1024  # 20MB/chunk
+    if file_size <= max_bytes:
+        return [{"path": audio_path, "start_sec": 0.0, "end_sec": 0.0, "index": 0}]
     chunks = []
+    with open(audio_path, "rb") as src:
+        data = src.read()
+    total = len(data)
     i = 0
-    start = 0.0
-    while start < duration_sec:
-        end = min(start + chunk_sec, duration_sec)
-        chunk_path = f"/tmp/chunk_{i:03d}.wav"
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", audio_path,
-             "-ss", str(start), "-t", str(chunk_sec),
-             "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
-             chunk_path],
-            capture_output=True, timeout=300
-        )
-        chunks.append({
-            "path": chunk_path,
-            "start_sec": start,
-            "end_sec": end,
-            "index": i,
-        })
-        start += chunk_sec
+    offset = 0
+    approx_sec_per_byte = duration_sec / total if duration_sec > 0 else 0
+    while offset < total:
+        end_offset = min(offset + max_bytes, total)
+        chunk_path = f"/tmp/chunk_bytes_{i:03d}.bin"
+        with open(chunk_path, "wb") as cf:
+            cf.write(data[offset:end_offset])
+        start_s = offset * approx_sec_per_byte
+        end_s   = end_offset * approx_sec_per_byte
+        chunks.append({"path": chunk_path, "start_sec": start_s, "end_sec": end_s, "index": i})
+        offset = end_offset
         i += 1
     return chunks
 def transcribe_groq(audio_path: str) -> str:
