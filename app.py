@@ -397,6 +397,78 @@ def transcribe_assemblyai(audio_path: str, speakers_expected: int = 2) -> str:
         text = getattr(transcript, "text", "") or ""
     return text
 
+def _sec_to_mmss(secs: float) -> str:
+    """秒数を MM:SS または HH:MM:SS 形式に変換"""
+    total = int(secs)
+    h, remainder = divmod(total, 3600)
+    m, s = divmod(remainder, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+
+def transcribe_groq_precise(audio_path: str) -> str:
+    """Groq Whisper 精密モード（セグメントレベルタイムスタンプ・MM:SS形式）"""
+    from groq import Groq
+    GROQ_MAX_MB = 24
+    file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
+
+    def _proc(path, offset=0.0):
+        client = Groq(api_key=GROQ_API_KEY)
+        with open(path, "rb") as f:
+            result = client.audio.transcriptions.create(
+                model="whisper-large-v3",
+                file=f,
+                language="ja",
+                response_format="verbose_json",
+                timestamp_granularities=["segment"],
+            )
+        lines = []
+        try:
+            for seg in result.segments:
+                ts = _sec_to_mmss(seg["start"] + offset)
+                lines.append(f"[{ts}] {seg['text'].strip()}")
+        except Exception:
+            lines.append(getattr(result, "text", "") or "")
+        return "\n".join(lines)
+
+    if file_size_mb > GROQ_MAX_MB:
+        chunks = split_audio_to_chunks(audio_path, chunk_minutes=5)
+        all_lines = []
+        for chunk in chunks:
+            all_lines.append(_proc(chunk["path"], chunk["start_sec"]))
+            try:
+                os.remove(chunk["path"])
+            except Exception:
+                pass
+        return "\n".join(all_lines)
+    else:
+        return _proc(audio_path, 0.0)
+
+def transcribe_assemblyai_precise(audio_path: str, speakers_expected: int = 2) -> str:
+    """AssemblyAI 精密モード（句読点・話者識別・MM:SS形式）"""
+    import assemblyai as aai
+    aai.settings.api_key = ASSEMBLYAI_API_KEY
+    config = aai.TranscriptionConfig(
+        speech_models=["universal-2"],
+        language_code="ja",
+        speaker_labels=True,
+        speakers_expected=speakers_expected,
+        punctuate=True,
+        format_text=True,
+        disfluencies=False,
+        word_boost=["万世", "にく万世", "ブーちゃん", "もーちゃん"],
+    )
+    transcriber = aai.Transcriber(config=config)
+    transcript = transcriber.transcribe(audio_path)
+    if transcript.status == aai.TranscriptStatus.error:
+        raise Exception("AssemblyAI エラー: " + str(transcript.error))
+    lines = []
+    if transcript.utterances:
+        for u in transcript.utterances:
+            ts = _sec_to_mmss(u.start / 1000)
+            lines.append(f"[{ts}] {u.speaker}: {u.text}")
+    else:
+        lines.append(getattr(transcript, "text", "") or "")
+    return "\n".join(lines)
+
 # ================================================================
 # Claude API 呼び出し
 # ================================================================
@@ -760,7 +832,7 @@ with tab1:
                     st.info(f"📊 ファイルサイズ: {file_size_mb:.1f} MB")
 
                 mode_g = st.radio("出力スタイル 📝",
-                    ["議事録のみ", "議事録＋文字起こしデータ"], index=1, key="af_mode")
+                    ["議事録のみ", "議事録＋文字起こしデータ", "🔬 精密文字起こし（タイムスタンプ付き・要約なし）"], index=1, key="af_mode")
                 col1, col2 = st.columns(2)
                 with col1:
                     q_date_g  = st.text_input("📅 会議日時", placeholder="例: 2026年3月30日", key="af_date")
@@ -783,10 +855,16 @@ with tab1:
                         f.write(uploaded.getvalue())
                     with st.spinner("🎤 Groq で文字起こし中... (通常30秒〜2分)"):
                         try:
-                            raw_text_g = transcribe_groq(raw_path)
-                            st.success("✅ 文字起こし完了！")
-                            st.text_area("📄 文字起こし結果（確認・編集可）", value=raw_text_g, height=200,
-                                key="groq_result")
+                            if mode_g == "🔬 精密文字起こし（タイムスタンプ付き・要約なし）":
+                                raw_text_g = transcribe_groq_precise(raw_path)
+                                st.success("✅ 精密文字起こし完了！")
+                                st.text_area("🔬 精密文字起こし結果（MM:SS タイムスタンプ付き）", value=raw_text_g, height=400,
+                                    key="groq_result")
+                            else:
+                                raw_text_g = transcribe_groq(raw_path)
+                                st.success("✅ 文字起こし完了！")
+                                st.text_area("📄 文字起こし結果（確認・編集可）", value=raw_text_g, height=200,
+                                    key="groq_result")
                         except Exception as e:
                             err_str = str(e)
                             if "429" in err_str or "rate_limit" in err_str.lower():
@@ -815,7 +893,19 @@ with tab1:
                             else:
                                 st.error("⚠️ 文字起こし中にエラーが発生しました。詳細: " + str(e))
 
-                    if raw_text_g and ANTHROPIC_API_KEY:
+                    if raw_text_g and mode_g == "🔬 精密文字起こし（タイムスタンプ付き・要約なし）":
+                        from datetime import datetime
+                        ts_g_p = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        fb_g_p = q_title_g.strip().replace(" ", "_") or "精密文字起こし"
+                        st.download_button(
+                            "💾 精密文字起こしをダウンロード (.txt)",
+                            data=raw_text_g,
+                            file_name=f"{fb_g_p}_{ts_g_p}.txt",
+                            mime="text/plain",
+                            key="groq_precise_dl"
+                        )
+                        play_completion_sound()
+                    elif raw_text_g and ANTHROPIC_API_KEY:
                         with st.spinner("🐷 Claude が議事録を生成中..."):
                             try:
                                 from datetime import datetime
@@ -864,7 +954,7 @@ with tab1:
 
                 speakers_n = st.number_input("👥 話者の人数（目安）", min_value=1, max_value=10, value=2, key="af_speakers_n")
                 mode_a = st.radio("出力スタイル 📝",
-                    ["議事録のみ", "議事録＋文字起こしデータ"], index=1, key="af_mode")
+                    ["議事録のみ", "議事録＋文字起こしデータ", "🔬 精密文字起こし（タイムスタンプ付き・要約なし）"], index=1, key="af_mode")
                 col1a, col2a = st.columns(2)
                 with col1a:
                     q_date_a  = st.text_input("📅 会議日時", placeholder="例: 2026年3月30日", key="af_date")
@@ -886,15 +976,33 @@ with tab1:
                         f.write(uploaded_a.getvalue())
                     with st.spinner("🎤 AssemblyAI で文字起こし中... (通常1〜3分)"):
                         try:
-                            raw_text_a = transcribe_assemblyai(raw_path_a, int(speakers_n))
-                            st.success("✅ 文字起こし完了！（話者識別済み）")
-                            st.text_area("📄 文字起こし結果（確認・編集可）", value=raw_text_a, height=200,
-                                key="aai_result")
+                            if mode_a == "🔬 精密文字起こし（タイムスタンプ付き・要約なし）":
+                                raw_text_a = transcribe_assemblyai_precise(raw_path_a, int(speakers_n))
+                                st.success("✅ 精密文字起こし完了！（話者識別・句読点付き）")
+                                st.text_area("🔬 精密文字起こし結果（MM:SS・話者ラベル付き）", value=raw_text_a, height=400,
+                                    key="aai_result")
+                            else:
+                                raw_text_a = transcribe_assemblyai(raw_path_a, int(speakers_n))
+                                st.success("✅ 文字起こし完了！（話者識別済み）")
+                                st.text_area("📄 文字起こし結果（確認・編集可）", value=raw_text_a, height=200,
+                                    key="aai_result")
                         except Exception as e:
                             st.error(f"文字起こしエラー: {e}")
                             raw_text_a = ""
 
-                    if raw_text_a and ANTHROPIC_API_KEY:
+                    if raw_text_a and mode_a == "🔬 精密文字起こし（タイムスタンプ付き・要約なし）":
+                        from datetime import datetime
+                        ts_a_p = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        fb_a_p = q_title_a.strip().replace(" ", "_") or "精密文字起こし"
+                        st.download_button(
+                            "💾 精密文字起こしをダウンロード (.txt)",
+                            data=raw_text_a,
+                            file_name=f"{fb_a_p}_{ts_a_p}.txt",
+                            mime="text/plain",
+                            key="aai_precise_dl"
+                        )
+                        play_completion_sound()
+                    elif raw_text_a and ANTHROPIC_API_KEY:
                         with st.spinner("🐷 Claude が議事録を生成中..."):
                             try:
                                 from datetime import datetime
