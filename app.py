@@ -27,6 +27,32 @@ CLAUDE_MODEL       = "claude-haiku-4-5-20251001"
 import pathlib
 pathlib.Path("/tmp/Claude").mkdir(parents=True, exist_ok=True)
 
+# ================================================================
+# 複数保存先（ローカル実行時に Google Drive・VSCode フォルダにも保存）
+# ================================================================
+_EXTRA_SAVE_DIRS = [
+    r"G:\マイドライブ\Claude",
+    r"G:\マイドライブ\VSCODE\manseibuuchan-app\manseibuuchan-app\output",
+]
+
+def get_all_save_dirs() -> list:
+    """利用可能な保存先ディレクトリをすべて返す（存在しない場合は作成を試みる）"""
+    dirs = [DRIVE_BASE]
+    for d in _EXTRA_SAVE_DIRS:
+        try:
+            pathlib.Path(d).mkdir(parents=True, exist_ok=True)
+            dirs.append(d)
+        except Exception:
+            pass  # クラウド環境などアクセス不可の場合はスキップ
+    # 重複除去（順序保持）
+    seen = set()
+    result = []
+    for d in dirs:
+        if d not in seen:
+            seen.add(d)
+            result.append(d)
+    return result
+
 WAV_FILE = "/tmp/meeting.wav"
 
 # ================================================================
@@ -101,7 +127,12 @@ check_auth()
 with st.sidebar:
     st.markdown("---")
     st.markdown("#### 📊 利用ログ")
-    _log_path = os.path.join(DRIVE_BASE, "usage_log.csv")
+    # 最初に見つかった usage_log.csv を使用（複数保存先対応）
+    _log_path = next(
+        (os.path.join(d, "usage_log.csv") for d in get_all_save_dirs()
+         if os.path.exists(os.path.join(d, "usage_log.csv"))),
+        os.path.join(DRIVE_BASE, "usage_log.csv")
+    )
     if os.path.exists(_log_path):
         import csv as _csv_mod
         from datetime import datetime as _dt_log
@@ -580,15 +611,17 @@ def write_usage_log(engine, file_name, file_size_mb,
         "total_tokens":     min_in + min_out + leg_in + leg_out,
         "success":          success,
     }
-    file_exists = os.path.exists(log_path)
-    try:
-        with open(log_path, "a", newline="", encoding="utf-8-sig") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            if not file_exists:
-                writer.writeheader()
-            writer.writerow(row)
-    except Exception:
-        pass  # ログ書き込み失敗はサイレントに無視
+    for save_dir in get_all_save_dirs():
+        _lp = os.path.join(save_dir, "usage_log.csv")
+        _exists = os.path.exists(_lp)
+        try:
+            with open(_lp, "a", newline="", encoding="utf-8-sig") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                if not _exists:
+                    writer.writeheader()
+                writer.writerow(row)
+        except Exception:
+            pass  # アクセス不可の保存先はスキップ
 
 # ================================================================
 # ZIP一括ダウンロード
@@ -611,8 +644,36 @@ def create_zip_bundle(file_base, ts, minutes_html, legal_html, raw_text):
     buf.seek(0)
     return buf.getvalue(), folder + ".zip"
 
+def save_output_to_dirs(file_base, ts, minutes_html, legal_html, raw_text):
+    """生成した議事録・文字起こし結果をすべての保存先フォルダに自動保存する"""
+    saved_to = []
+    for save_dir in get_all_save_dirs():
+        try:
+            folder = os.path.join(save_dir, ts + "_" + (file_base or "議事録"))
+            pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
+            if minutes_html:
+                p = os.path.join(folder, file_base + "_議事録.html")
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(minutes_html)
+            if legal_html:
+                p = os.path.join(folder, file_base + "_文字起こしデータ.html")
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(legal_html)
+            if raw_text:
+                p = os.path.join(folder, file_base + "_文字起こし.txt")
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(raw_text)
+            saved_to.append(save_dir)
+        except Exception:
+            pass  # アクセス不可の保存先はスキップ
+    return saved_to
+
 def show_download_section(file_base, ts, minutes_html, legal_html, raw_text, key_prefix=""):
     """ZIPボタン（大）＋個別ボタン（小）をまとめて表示する。"""
+    # 全保存先に自動保存
+    saved_dirs = save_output_to_dirs(file_base, ts, minutes_html, legal_html, raw_text)
+    if len(saved_dirs) > 1:
+        st.caption(f"💾 自動保存先: {', '.join(saved_dirs)}")
     zip_bytes, zip_name = create_zip_bundle(file_base, ts, minutes_html, legal_html, raw_text)
     st.markdown("---")
     st.markdown("#### 📦 ダウンロード")
